@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   ScrollView,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 
 export default function FamilySafetyScreen() {
   const router = useRouter();
@@ -18,9 +21,57 @@ export default function FamilySafetyScreen() {
   const [bedtimeCurfew, setBedtimeCurfew] = useState(true);
   const [safeSearch, setSafeSearch] = useState(true);
   const [appLimitsEnabled, setAppLimitsEnabled] = useState(true);
-  const [pairingCode] = useState('NINJA-8492-X');
+  const [pairingCode, setPairingCode] = useState('NINJA-8492-X');
 
-  const handleGrantExtension = () => {
+  useEffect(() => {
+    void (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@family_supervision_prefs_v1');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.bedtimeCurfew !== undefined) setBedtimeCurfew(parsed.bedtimeCurfew);
+          if (parsed.safeSearch !== undefined) setSafeSearch(parsed.safeSearch);
+          if (parsed.appLimitsEnabled !== undefined) setAppLimitsEnabled(parsed.appLimitsEnabled);
+          if (parsed.pairingCode) setPairingCode(parsed.pairingCode);
+        } else {
+          const code = `NINJA-${Math.floor(1000 + Math.random() * 9000)}-${Platform.OS === 'android' ? 'A' : 'I'}`;
+          setPairingCode(code);
+          await AsyncStorage.setItem('@family_supervision_prefs_v1', JSON.stringify({ pairingCode: code }));
+        }
+      } catch (e) {
+        console.warn('Failed to load family supervision prefs:', e);
+      }
+    })();
+  }, []);
+
+  const saveSupervisionPrefs = async (updates: Record<string, any>) => {
+    try {
+      const currentRaw = await AsyncStorage.getItem('@family_supervision_prefs_v1');
+      const current = currentRaw ? JSON.parse(currentRaw) : {};
+      const merged = { ...current, bedtimeCurfew, safeSearch, appLimitsEnabled, pairingCode, ...updates };
+      await AsyncStorage.setItem('@family_supervision_prefs_v1', JSON.stringify(merged));
+    } catch (e) {
+      console.warn('Failed to persist family prefs:', e);
+    }
+  };
+
+  const handleToggleCurfew = (val: boolean) => {
+    setBedtimeCurfew(val);
+    void saveSupervisionPrefs({ bedtimeCurfew: val });
+  };
+
+  const handleToggleLimits = (val: boolean) => {
+    setAppLimitsEnabled(val);
+    void saveSupervisionPrefs({ appLimitsEnabled: val });
+  };
+
+  const handleToggleSafeSearch = (val: boolean) => {
+    setSafeSearch(val);
+    void saveSupervisionPrefs({ safeSearch: val });
+  };
+
+  const handleGrantExtension = async () => {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Allowance Granted', 'Granted +15 minutes temporary focus pass to paired device.');
   };
 
@@ -92,7 +143,7 @@ export default function FamilySafetyScreen() {
                 </View>
                 <Switch
                   value={bedtimeCurfew}
-                  onValueChange={setBedtimeCurfew}
+                  onValueChange={handleToggleCurfew}
                   thumbColor={bedtimeCurfew ? '#F59E0B' : '#64748B'}
                   trackColor={{ false: '#334155', true: '#292211' }}
                 />
@@ -106,7 +157,7 @@ export default function FamilySafetyScreen() {
                 </View>
                 <Switch
                   value={appLimitsEnabled}
-                  onValueChange={setAppLimitsEnabled}
+                  onValueChange={handleToggleLimits}
                   thumbColor={appLimitsEnabled ? '#00E699' : '#64748B'}
                   trackColor={{ false: '#334155', true: '#0F291E' }}
                 />
@@ -120,7 +171,7 @@ export default function FamilySafetyScreen() {
                 </View>
                 <Switch
                   value={safeSearch}
-                  onValueChange={setSafeSearch}
+                  onValueChange={handleToggleSafeSearch}
                   thumbColor={safeSearch ? '#60A5FA' : '#64748B'}
                   trackColor={{ false: '#334155', true: '#1E293B' }}
                 />

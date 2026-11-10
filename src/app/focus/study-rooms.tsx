@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,14 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NinjaPalette } from '../../constants/theme';
 
 interface StudyRoom {
@@ -73,9 +76,29 @@ const INITIAL_ROOMS: StudyRoom[] = [
 
 export default function StudyRoomsScreen() {
   const router = useRouter();
-  const [rooms] = useState<StudyRoom[]>(INITIAL_ROOMS);
+  const [rooms, setRooms] = useState<StudyRoom[]>(INITIAL_ROOMS);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'exam' | 'craft'>('all');
   const [joinedRoomId, setJoinedRoomId] = useState<string | null>(null);
+
+  // Room Creation Modal
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newCategory, setNewCategory] = useState<'exam' | 'craft' | 'reading'>('exam');
+  const [newDuration, setNewDuration] = useState('25m Pomodoro');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@study_rooms_custom_v1');
+        if (stored) {
+          const parsed: StudyRoom[] = JSON.parse(stored);
+          setRooms([...parsed, ...INITIAL_ROOMS]);
+        }
+      } catch (e) {
+        console.warn('Failed to load study rooms:', e);
+      }
+    })();
+  }, []);
 
   const filteredRooms = rooms.filter((r) => {
     if (selectedFilter === 'all') return true;
@@ -87,7 +110,7 @@ export default function StudyRoomsScreen() {
     setJoinedRoomId(room.id);
     Alert.alert(
       `Joined ${room.title}!`,
-      `You are now synced with ${room.activeParticipants} fellow Ninjas. Launching synchronized focus sprint.`,
+      `You are now synced with ${room.activeParticipants} fellow Ninjas. Launching synchronized focus sprint (${room.currentCycle}).`,
       [
         {
           text: 'Enter Focus Chamber',
@@ -97,17 +120,46 @@ export default function StudyRoomsScreen() {
     );
   };
 
-  const handleCreateRoom = async () => {
+  const handleOpenCreateModal = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowCreateModal(true);
+  };
+
+  const handleSaveCustomRoom = async () => {
+    if (!newTitle.trim()) {
+      Alert.alert('Title Required', 'Please enter a name for your study room.');
+      return;
+    }
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const newRoom: StudyRoom = {
+      id: `custom_room_${Date.now()}`,
+      title: newTitle.trim(),
+      category: newCategory,
+      activeParticipants: 1,
+      currentCycle: `Just Started (${newDuration})`,
+      hostName: 'You (Sensei)',
+      badgeColor: newCategory === 'exam' ? '#EF4444' : newCategory === 'craft' ? '#60A5FA' : '#10B981',
+    };
+
+    const updated = [newRoom, ...rooms];
+    setRooms(updated);
+    setShowCreateModal(false);
+    setNewTitle('');
+
+    try {
+      const customOnly = updated.filter((r) => r.id.startsWith('custom_room_'));
+      await AsyncStorage.setItem('@study_rooms_custom_v1', JSON.stringify(customOnly));
+    } catch (e) {
+      console.warn('Failed to persist custom study room:', e);
+    }
+
     Alert.alert(
-      'Create Private Study Room',
-      'Generate an invite link for your peer group or college guild.',
+      'Study Room Created!',
+      `"${newRoom.title}" is now open. Invite link: neuroninja://room/join?id=${newRoom.id}`,
       [
-        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Generate Link',
-          onPress: () =>
-            Alert.alert('Room Created!', 'Invite Link: neuroninja://room/join?id=ninja_study_992'),
+          text: 'Start Sprint Now',
+          onPress: () => router.push('/focus/pomodoro' as any),
         },
       ]
     );
@@ -123,7 +175,7 @@ export default function StudyRoomsScreen() {
           <Text style={styles.badge}>REGAIN PARITY</Text>
           <Text style={styles.title}>Study Lounges</Text>
         </View>
-        <TouchableOpacity style={styles.createBtn} onPress={handleCreateRoom}>
+        <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateModal}>
           <MaterialCommunityIcons name="plus" size={18} color="#070A11" />
           <Text style={styles.createBtnText}>Create</Text>
         </TouchableOpacity>
@@ -206,6 +258,97 @@ export default function StudyRoomsScreen() {
           })}
         </View>
       </ScrollView>
+
+      {/* Real Room Creation Modal */}
+      <Modal
+        visible={showCreateModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCreateModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Study Room</Text>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+                <Ionicons name="close" size={22} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>ROOM TITLE</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. UPSC Prelims Revision Hub"
+              placeholderTextColor="#64748B"
+              value={newTitle}
+              onChangeText={setNewTitle}
+              autoFocus
+            />
+
+            <Text style={styles.inputLabel}>CATEGORY</Text>
+            <View style={styles.categoryPicker}>
+              {(['exam', 'craft', 'reading'] as const).map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.catChoice,
+                    newCategory === cat && styles.catChoiceActive,
+                  ]}
+                  onPress={() => setNewCategory(cat)}
+                >
+                  <Text
+                    style={[
+                      styles.catChoiceText,
+                      newCategory === cat && styles.catChoiceTextActive,
+                    ]}
+                  >
+                    {cat.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.inputLabel}>SESSION PROTOCOL</Text>
+            <View style={styles.categoryPicker}>
+              {['25m Pomodoro', '50m Deep Work', '90m Ultra Sprint'].map((dur) => (
+                <TouchableOpacity
+                  key={dur}
+                  style={[
+                    styles.catChoice,
+                    newDuration === dur && styles.catChoiceActive,
+                  ]}
+                  onPress={() => setNewDuration(dur)}
+                >
+                  <Text
+                    style={[
+                      styles.catChoiceText,
+                      newDuration === dur && styles.catChoiceTextActive,
+                    ]}
+                  >
+                    {dur}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setShowCreateModal(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.confirmBtn}
+                onPress={() => void handleSaveCustomRoom()}
+              >
+                <Text style={styles.confirmBtnText}>Create &amp; Enter</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -391,6 +534,105 @@ const styles = StyleSheet.create({
   },
   joinBtnTextActive: {
     color: '#00E699',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 1,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  textInput: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: '#F8FAFC',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  categoryPicker: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  catChoice: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+  },
+  catChoiceActive: {
+    borderColor: '#00E699',
+    backgroundColor: 'rgba(0, 230, 153, 0.1)',
+  },
+  catChoiceText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  catChoiceTextActive: {
+    color: '#00E699',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  confirmBtn: {
+    flex: 1.5,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#00E699',
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    color: '#070A11',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
 

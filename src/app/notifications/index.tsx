@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,71 +13,72 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { NinjaPalette } from '../../constants/theme';
-
-interface FilteredNotification {
-  id: string;
-  appName: string;
-  pkg: string;
-  title: string;
-  body: string;
-  timestamp: string;
-  icon: string;
-  color: string;
-}
-
-const SAMPLE_NOTIFICATIONS: FilteredNotification[] = [
-  {
-    id: 'n1',
-    appName: 'Instagram',
-    pkg: 'com.instagram.android',
-    title: 'New Reel from friend',
-    body: 'alex_dev shared a video with you: "10x engineer tips..."',
-    timestamp: '14m ago',
-    icon: 'instagram',
-    color: '#EC4899',
-  },
-  {
-    id: 'n2',
-    appName: 'YouTube',
-    pkg: 'com.google.android.youtube',
-    title: 'Trending Recommended',
-    body: 'Check out the top viral video right now',
-    timestamp: '32m ago',
-    icon: 'youtube',
-    color: '#EF4444',
-  },
-  {
-    id: 'n3',
-    appName: 'X / Twitter',
-    pkg: 'com.twitter.android',
-    title: 'Breaking Tech Discourse',
-    body: '47 people in your network are discussing AI models...',
-    timestamp: '1h ago',
-    icon: 'twitter',
-    color: '#60A5FA',
-  },
-  {
-    id: 'n4',
-    appName: 'Reddit',
-    pkg: 'com.reddit.frontpage',
-    title: 'Popular on r/productivity',
-    body: 'How I quit doomscrolling after 5 years of addiction',
-    timestamp: '2h ago',
-    icon: 'reddit',
-    color: '#F97316',
-  },
-];
+import {
+  getBatchedNotifications,
+  dismissBatchedNotification,
+  clearAllBatchedNotifications,
+  saveBatchedNotification,
+  type BatchedNotificationItem,
+} from '../../services/storage';
 
 export default function NotificationIntelligenceScreen() {
   const router = useRouter();
   const [filterEnabled, setFilterEnabled] = useState(true);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(true);
-  const [notifications, setNotifications] = useState<FilteredNotification[]>(SAMPLE_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<BatchedNotificationItem[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      const stored = await getBatchedNotifications();
+      if (stored.length > 0) {
+        setNotifications(stored);
+      } else {
+        // Initial real template notification
+        const initialItem: BatchedNotificationItem = {
+          id: 'n_init_1',
+          appName: 'NeuroNinja Shield',
+          pkg: 'com.neuroninja.app',
+          title: 'Distraction Barrier Active',
+          body: 'Social notifications from Instagram, YouTube, and TikTok are held until the next batch digest.',
+          timestamp: 'Just now',
+          receivedAtMs: Date.now(),
+          icon: 'shield-check',
+          color: '#00E699',
+        };
+        const list = await saveBatchedNotification(initialItem);
+        setNotifications(list);
+      }
+    })();
+  }, []);
 
   const handleClearInbox = async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await clearAllBatchedNotifications();
     setNotifications([]);
     Alert.alert('Inbox Cleared', 'All held notifications have been cleared.');
+  };
+
+  const handleDismiss = async (id: string) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const updated = await dismissBatchedNotification(id);
+    setNotifications(updated);
+  };
+
+  const handleAddTestIntercept = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const newItem: BatchedNotificationItem = {
+      id: `n_${Date.now()}`,
+      appName: 'Instagram',
+      pkg: 'com.instagram.android',
+      title: 'Intercepted Social Ping',
+      body: 'Someone commented on a post. Stored silently without screen wake.',
+      timestamp: 'Just now',
+      receivedAtMs: Date.now(),
+      icon: 'instagram',
+      color: '#EC4899',
+    };
+    const updated = await saveBatchedNotification(newItem);
+    setNotifications(updated);
   };
 
   return (
@@ -175,9 +176,23 @@ export default function NotificationIntelligenceScreen() {
                     {n.body}
                   </Text>
                 </View>
+                <TouchableOpacity
+                  style={{ padding: 6, marginLeft: 6 }}
+                  onPress={() => void handleDismiss(n.id)}
+                >
+                  <Ionicons name="close" size={16} color="#64748B" />
+                </TouchableOpacity>
               </View>
             ))
           )}
+
+          <TouchableOpacity
+            style={styles.testBtn}
+            onPress={handleAddTestIntercept}
+          >
+            <MaterialCommunityIcons name="plus-circle-outline" size={18} color="#00E699" />
+            <Text style={styles.testBtnText}>Simulate Intercepted Notification</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -375,6 +390,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: NinjaPalette.textSecondary,
     lineHeight: 15,
+  },
+  testBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.3)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 230, 153, 0.05)',
+    marginTop: 14,
+  },
+  testBtnText: {
+    color: '#00E699',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

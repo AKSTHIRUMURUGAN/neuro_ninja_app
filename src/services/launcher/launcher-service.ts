@@ -3,6 +3,7 @@ import {
   isDefaultLauncher as nativeIsDefaultLauncher,
   requestDefaultLauncher as nativeRequestDefaultLauncher,
   openHomeSettings as nativeOpenHomeSettings,
+  launchApp as nativeLaunchApp,
 } from 'expo-app-blocker';
 
 export interface LauncherStatus {
@@ -40,6 +41,16 @@ export function openNormalLauncherSettings(): boolean {
     return nativeOpenHomeSettings();
   } catch (error) {
     console.warn('[LauncherService] Failed to open home settings:', error);
+    return false;
+  }
+}
+
+export function launchApplication(packageName: string): boolean {
+  if (Platform.OS !== 'android') return false;
+  try {
+    return nativeLaunchApp(packageName);
+  } catch (error) {
+    console.warn('[LauncherService] Failed to launch application:', packageName, error);
     return false;
   }
 }

@@ -53,8 +53,10 @@ export function NinjaCompanion({ interceptsCount, totalFocusCoins = 120 }: Compa
         {/* Info & Speech Bubble */}
         <View style={styles.infoCol}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>Kage (Shadow Companion)</Text>
-            <Text style={[styles.rankTag, { color: rank.color }]}>{rank.title}</Text>
+            <Text style={styles.name} numberOfLines={1}>Kage</Text>
+            <View style={[styles.rankBadge, { borderColor: `${rank.color}40` }]}>
+              <Text style={[styles.rankTag, { color: rank.color }]}>{rank.title}</Text>
+            </View>
           </View>
 
           {/* Speech Bubble */}
@@ -125,12 +127,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginBottom: 6,
   },
   name: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
     color: NinjaPalette.textPrimary,
+    flexShrink: 1,
+  },
+  rankBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
   },
   rankTag: {
     fontSize: 10,

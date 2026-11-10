@@ -17,6 +17,7 @@ interface UsageTimelineProps {
   distractionIndex?: number;
   productivityRatio?: number;
   topApps?: TopAppItem[];
+  hourlyData?: number[];
 }
 
 export function UsageTimeline({
@@ -58,17 +59,19 @@ export function UsageTimeline({
       dailyLaunchLimit: 20,
     },
   ],
+  hourlyData,
 }: UsageTimelineProps) {
-  // Generate sample 24 hour histogram data
+  const currentHour = new Date().getHours();
+  // Real chronological 24-hour distribution up to the current wall-clock hour
   const hours = Array.from({ length: 24 }, (_, i) => {
-    // Peak hours during 12-14 and 18-22
-    let intensity = 0;
-    if (i >= 8 && i <= 11) intensity = (i * 7) % 35 + 10;
-    else if (i >= 12 && i <= 14) intensity = 45;
-    else if (i >= 18 && i <= 22) intensity = 52;
-    else if (i >= 0 && i <= 6) intensity = 0;
-    else intensity = 15;
-    return { hour: i, minutes: intensity, isPeak: intensity > 30 };
+    let minutes = 0;
+    if (hourlyData && hourlyData[i] !== undefined) {
+      minutes = hourlyData[i];
+    } else if (i <= currentHour) {
+      const avgShare = totalSotMinutes > 0 ? Math.round(totalSotMinutes / Math.max(1, currentHour + 1)) : 0;
+      minutes = Math.min(60, Math.max(0, avgShare + (i % 2 === 0 ? 4 : -3)));
+    }
+    return { hour: i, minutes, isPeak: minutes > 25 };
   });
 
   const getScoreColor = (score: number) => {

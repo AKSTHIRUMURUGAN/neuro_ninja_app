@@ -233,4 +233,65 @@ export async function updateAppQuotaPolicy(
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Batched Notifications Storage
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface BatchedNotificationItem {
+  id: string;
+  appName: string;
+  pkg: string;
+  title: string;
+  body: string;
+  timestamp: string;
+  receivedAtMs: number;
+  icon: string;
+  color: string;
+}
+
+const NOTIFICATIONS_STORAGE_KEY = '@neuro_ninja_batched_notifs_v1';
+
+export async function getBatchedNotifications(): Promise<BatchedNotificationItem[]> {
+  try {
+    const raw = await AsyncStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to get batched notifications:', e);
+    return [];
+  }
+}
+
+export async function saveBatchedNotification(item: BatchedNotificationItem): Promise<BatchedNotificationItem[]> {
+  try {
+    const current = await getBatchedNotifications();
+    const updated = [item, ...current].slice(0, 100);
+    await AsyncStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    console.error('Failed to save batched notification:', e);
+    return [];
+  }
+}
+
+export async function dismissBatchedNotification(id: string): Promise<BatchedNotificationItem[]> {
+  try {
+    const current = await getBatchedNotifications();
+    const updated = current.filter((n) => n.id !== id);
+    await AsyncStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    console.error('Failed to dismiss batched notification:', e);
+    return [];
+  }
+}
+
+export async function clearAllBatchedNotifications(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+  } catch (e) {
+    console.error('Failed to clear batched notifications:', e);
+  }
+}
+
 

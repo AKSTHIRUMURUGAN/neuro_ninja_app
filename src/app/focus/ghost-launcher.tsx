@@ -7,46 +7,102 @@ import {
   ScrollView,
   TextInput,
   Modal,
-  BackHandler,
   Platform,
   Image,
   AppState,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useNinja } from '../../context/ninja-context';
+import { blockerEngine } from '../../services/blocker/blocker-engine';
 import {
   checkLauncherStatus,
   promptSetDefaultLauncher,
   openNormalLauncherSettings,
+  launchApplication,
 } from '../../services/launcher/launcher-service';
 
-interface GhostApp {
+export interface GhostApp {
   id: string;
+  packageName?: string;
   name: string;
   customName?: string;
-  category: 'Communication' | 'Productivity' | 'Study' | 'Utility';
+  category: 'Communication' | 'Productivity' | 'Study' | 'Utility' | 'Media' | 'General';
   isFavorite: boolean;
   isHidden: boolean;
+  iconBase64?: string | null;
 }
 
-const DEFAULT_APPS: GhostApp[] = [
-  { id: 'phone', name: 'Phone & Contacts', category: 'Communication', isFavorite: true, isHidden: false },
-  { id: 'messages', name: 'Messages', category: 'Communication', isFavorite: true, isHidden: false },
-  { id: 'notes', name: 'Notes & Ideas', category: 'Productivity', isFavorite: true, isHidden: false },
-  { id: 'calendar', name: 'Calendar', category: 'Productivity', isFavorite: false, isHidden: false },
-  { id: 'camera', name: 'Camera', category: 'Utility', isFavorite: false, isHidden: false },
-  { id: 'maps', name: 'Maps & Navigation', category: 'Utility', isFavorite: false, isHidden: false },
-  { id: 'study_portal', name: 'YouTube Study Portal', category: 'Study', isFavorite: true, isHidden: false },
-  { id: 'dojo_brain', name: 'Brain Arcade Games', category: 'Study', isFavorite: false, isHidden: false },
-  { id: 'browser', name: 'Mindful Browser', category: 'Utility', isFavorite: false, isHidden: false },
-  { id: 'calculator', name: 'Calculator', category: 'Utility', isFavorite: false, isHidden: false },
-];
+function inferCategory(pkg: string, name: string): GhostApp['category'] {
+  const p = (pkg + ' ' + name).toLowerCase();
+  if (
+    p.includes('whatsapp') ||
+    p.includes('telegram') ||
+    p.includes('signal') ||
+    p.includes('message') ||
+    p.includes('chat') ||
+    p.includes('phone') ||
+    p.includes('contact') ||
+    p.includes('dialer')
+  ) {
+    return 'Communication';
+  }
+  if (
+    p.includes('youtube') ||
+    p.includes('netflix') ||
+    p.includes('spotify') ||
+    p.includes('camera') ||
+    p.includes('gallery') ||
+    p.includes('photo') ||
+    p.includes('video') ||
+    p.includes('music') ||
+    p.includes('instagram') ||
+    p.includes('tiktok')
+  ) {
+    return 'Media';
+  }
+  if (
+    p.includes('note') ||
+    p.includes('calendar') ||
+    p.includes('todo') ||
+    p.includes('keep') ||
+    p.includes('clock') ||
+    p.includes('calculator') ||
+    p.includes('drive') ||
+    p.includes('doc')
+  ) {
+    return 'Productivity';
+  }
+  if (
+    p.includes('study') ||
+    p.includes('learn') ||
+    p.includes('book') ||
+    p.includes('brain') ||
+    p.includes('quiz') ||
+    p.includes('read')
+  ) {
+    return 'Study';
+  }
+  if (
+    p.includes('chrome') ||
+    p.includes('browser') ||
+    p.includes('settings') ||
+    p.includes('map') ||
+    p.includes('uber') ||
+    p.includes('weather') ||
+    p.includes('file')
+  ) {
+    return 'Utility';
+  }
+  return 'General';
+}
 
 type LauncherProfile = 'minimal' | 'deep_focus' | 'normal';
 type ThemeMode = 'oled' | 'slate' | 'paper';
@@ -57,7 +113,8 @@ export default function GhostLauncherScreen() {
 
   const [profile, setProfile] = useState<LauncherProfile>('minimal');
   const [theme, setTheme] = useState<ThemeMode>('oled');
-  const [apps, setApps] = useState<GhostApp[]>(DEFAULT_APPS);
+  const [apps, setApps] = useState<GhostApp[]>([]);
+  const [isLoadingApps, setIsLoadingApps] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
@@ -65,6 +122,7 @@ export default function GhostLauncherScreen() {
   const [isDefaultLauncher, setIsDefaultLauncher] = useState<boolean>(false);
   const [isLauncherSupported, setIsLauncherSupported] = useState<boolean>(Platform.OS === 'android');
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [showGuidedModal, setShowGuidedModal] = useState<boolean>(false);
   const [bannerDismissed, setBannerDismissed] = useState<boolean>(false);
 
   // App Renaming Modal
@@ -75,6 +133,7 @@ export default function GhostLauncherScreen() {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
 
+  // Check launcher status and register resume listener
   useEffect(() => {
     let isMounted = true;
     void checkLauncherStatus().then((status) => {
@@ -101,6 +160,68 @@ export default function GhostLauncherScreen() {
     };
   }, []);
 
+  // Load Real Installed Applications
+  useEffect(() => {
+    let isMounted = true;
+    void (async () => {
+      try {
+        const [installedApps, savedPrefsRaw] = await Promise.all([
+          blockerEngine.getInstalledApps(),
+          AsyncStorage.getItem('@ghost_launcher_user_prefs_v2'),
+        ]);
+
+        const savedPrefs = savedPrefsRaw
+          ? JSON.parse(savedPrefsRaw)
+          : { favorites: [], aliases: {}, hidden: [] };
+
+        const builtInPortals: GhostApp[] = [
+          {
+            id: 'portal_study',
+            packageName: 'builtin.study_portal',
+            name: 'YouTube Study Mode (Shorts Blocked)',
+            category: 'Study',
+            isFavorite: true,
+            isHidden: false,
+          },
+          {
+            id: 'portal_arcade',
+            packageName: 'builtin.dojo_brain',
+            name: 'Ninja Brain Arcade',
+            category: 'Study',
+            isFavorite: true,
+            isHidden: false,
+          },
+        ];
+
+        const realAppItems: GhostApp[] = (installedApps || []).map((app) => ({
+          id: app.packageName,
+          packageName: app.packageName,
+          name: app.name,
+          customName: savedPrefs.aliases?.[app.packageName],
+          category: inferCategory(app.packageName, app.name),
+          isFavorite: savedPrefs.favorites?.includes(app.packageName) ?? false,
+          isHidden: savedPrefs.hidden?.includes(app.packageName) ?? false,
+          iconBase64: app.iconBase64,
+        }));
+
+        if (isMounted) {
+          setApps([...builtInPortals, ...realAppItems]);
+          setIsLoadingApps(false);
+        }
+      } catch (err) {
+        console.warn('Failed to load installed apps for ghost launcher:', err);
+        if (isMounted) {
+          setIsLoadingApps(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Clock tick
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -115,6 +236,22 @@ export default function GhostLauncherScreen() {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const savePreferences = async (updatedApps: GhostApp[]) => {
+    try {
+      const prefs = {
+        favorites: updatedApps.filter((a) => a.isFavorite).map((a) => a.id),
+        hidden: updatedApps.filter((a) => a.isHidden).map((a) => a.id),
+        aliases: updatedApps.reduce<Record<string, string>>((acc, a) => {
+          if (a.customName && a.customName.trim()) acc[a.id] = a.customName.trim();
+          return acc;
+        }, {}),
+      };
+      await AsyncStorage.setItem('@ghost_launcher_user_prefs_v2', JSON.stringify(prefs));
+    } catch (e) {
+      console.warn('Failed to save ghost launcher prefs:', e);
+    }
+  };
 
   const themeStyles = useMemo(() => {
     if (theme === 'paper') {
@@ -147,23 +284,23 @@ export default function GhostLauncherScreen() {
     };
   }, [theme]);
 
-  const handleSetDefaultLauncher = async () => {
+  const handleStartSetDefault = () => {
+    setShowGuidedModal(true);
+  };
+
+  const handleConfirmSetDefault = async () => {
+    setShowGuidedModal(false);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await setGhostLauncherAsHome(true);
     const triggered = promptSetDefaultLauncher();
     if (!triggered) {
-      Alert.alert(
-        'Home Launcher Settings',
-        'Please select NeuroNinja as your Default Home App in Android Settings.',
-        [
-          { text: 'Open Settings', onPress: () => openNormalLauncherSettings() },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      openNormalLauncherSettings();
     }
   };
 
   const handleSwitchToNormalLauncher = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await setGhostLauncherAsHome(false);
     const opened = openNormalLauncherSettings();
     if (!opened) {
       Alert.alert(
@@ -175,16 +312,24 @@ export default function GhostLauncherScreen() {
 
   const toggleFavorite = async (id: string) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setApps((prev) =>
-      prev.map((app) => (app.id === id ? { ...app, isFavorite: !app.isFavorite } : app))
-    );
+    setApps((prev) => {
+      const next = prev.map((app) =>
+        app.id === id ? { ...app, isFavorite: !app.isFavorite } : app
+      );
+      void savePreferences(next);
+      return next;
+    });
   };
 
   const toggleHide = async (id: string) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setApps((prev) =>
-      prev.map((app) => (app.id === id ? { ...app, isHidden: !app.isHidden } : app))
-    );
+    setApps((prev) => {
+      const next = prev.map((app) =>
+        app.id === id ? { ...app, isHidden: !app.isHidden } : app
+      );
+      void savePreferences(next);
+      return next;
+    });
   };
 
   const handleStartRename = (app: GhostApp) => {
@@ -195,26 +340,31 @@ export default function GhostLauncherScreen() {
   const handleSaveRename = async () => {
     if (!renamingApp) return;
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setApps((prev) =>
-      prev.map((app) =>
+    setApps((prev) => {
+      const next = prev.map((app) =>
         app.id === renamingApp.id ? { ...app, customName: renameInput.trim() } : app
-      )
-    );
+      );
+      void savePreferences(next);
+      return next;
+    });
     setRenamingApp(null);
   };
 
   const handleLaunchApp = async (app: GhostApp) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (app.id === 'study_portal') {
+    if (app.id === 'portal_study' || app.packageName === 'builtin.study_portal') {
       router.push('/focus/pomodoro' as any);
       return;
     }
-    if (app.id === 'dojo_brain') {
+    if (app.id === 'portal_arcade' || app.packageName === 'builtin.dojo_brain') {
       router.push('/dojo-games' as any);
       return;
     }
-    if (Platform.OS === 'android') {
-      BackHandler.exitApp();
+    if (app.packageName && Platform.OS === 'android') {
+      const success = launchApplication(app.packageName);
+      if (!success) {
+        Alert.alert('App Launch', `Could not open ${app.name}.`);
+      }
     }
   };
 
@@ -226,7 +376,9 @@ export default function GhostLauncherScreen() {
       return list;
     }
 
-    if (selectedCategory !== 'All') {
+    if (selectedCategory === 'Favorites') {
+      list = list.filter((a) => a.isFavorite);
+    } else if (selectedCategory !== 'All') {
       list = list.filter((a) => a.category === selectedCategory);
     }
 
@@ -255,7 +407,11 @@ export default function GhostLauncherScreen() {
             />
             <View>
               <Text style={[styles.brandTitle, { color: themeStyles.text }]}>NeuroNinja Ghost</Text>
-              <View style={styles.statusPillRow}>
+              <TouchableOpacity
+                style={styles.statusPillRow}
+                onPress={handleStartSetDefault}
+                activeOpacity={0.7}
+              >
                 <View
                   style={[
                     styles.statusDot,
@@ -263,9 +419,9 @@ export default function GhostLauncherScreen() {
                   ]}
                 />
                 <Text style={[styles.statusText, { color: themeStyles.subtext }]}>
-                  {isDefaultLauncher ? 'Default Home: Active' : 'Default Home: Not Set'}
+                  {isDefaultLauncher ? 'Default Home: Active' : 'Default Home: Tap to Enable'}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -295,7 +451,7 @@ export default function GhostLauncherScreen() {
                   Set as Default Launcher
                 </Text>
                 <Text style={[styles.defaultBannerSub, { color: themeStyles.subtext }]}>
-                  Turn your phone into a distraction-free sanctuary. Pressing Home will return here.
+                  Turn your phone into a distraction-free sanctuary. Swiping up or pressing Home will return here.
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setBannerDismissed(true)}>
@@ -306,7 +462,7 @@ export default function GhostLauncherScreen() {
             <View style={styles.defaultBannerActions}>
               <TouchableOpacity
                 style={[styles.setDefBtn, { backgroundColor: themeStyles.accent }]}
-                onPress={handleSetDefaultLauncher}
+                onPress={handleStartSetDefault}
               >
                 <Text
                   style={[
@@ -380,7 +536,7 @@ export default function GhostLauncherScreen() {
                   { color: profile === 'normal' ? themeStyles.text : themeStyles.subtext },
                 ]}
               >
-                Normal
+                All Apps
               </Text>
             </TouchableOpacity>
           </View>
@@ -411,7 +567,7 @@ export default function GhostLauncherScreen() {
           </Text>
         </View>
 
-        {/* Search Input Bar (Visible in Minimal & Normal Modes) */}
+        {/* Search Input Bar */}
         {profile !== 'deep_focus' && (
           <View
             style={[
@@ -437,49 +593,60 @@ export default function GhostLauncherScreen() {
           </View>
         )}
 
-        {/* Category Filter Pills (Minimal Mode) */}
+        {/* Category Filter Pills */}
         {profile === 'minimal' && !searchQuery && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={styles.categoryScroll}
             contentContainerStyle={styles.categoryRow}
           >
-            {['All', 'Communication', 'Productivity', 'Study', 'Utility'].map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[
-                  styles.categoryPill,
-                  { borderColor: themeStyles.border },
-                  selectedCategory === cat && {
-                    backgroundColor: themeStyles.cardBg,
-                    borderColor: themeStyles.accent,
-                  },
-                ]}
-                onPress={() => setSelectedCategory(cat)}
-              >
-                <Text
+            {['All', 'Favorites', 'Communication', 'Productivity', 'Study', 'Media', 'Utility'].map(
+              (cat) => (
+                <TouchableOpacity
+                  key={cat}
                   style={[
-                    styles.categoryPillText,
-                    { color: selectedCategory === cat ? themeStyles.text : themeStyles.subtext },
+                    styles.categoryPill,
+                    { borderColor: themeStyles.border },
+                    selectedCategory === cat && {
+                      backgroundColor: themeStyles.cardBg,
+                      borderColor: themeStyles.accent,
+                    },
                   ]}
+                  onPress={() => setSelectedCategory(cat)}
                 >
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.categoryPillText,
+                      { color: selectedCategory === cat ? themeStyles.text : themeStyles.subtext },
+                    ]}
+                  >
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
           </ScrollView>
         )}
 
-        {/* Text-Only Distraction-Free Application Drawer */}
+        {/* Real Distraction-Free Application Drawer */}
         <ScrollView contentContainerStyle={styles.appList} showsVerticalScrollIndicator={false}>
-          {profile === 'normal' && (
-            <View style={styles.normalNoticeBox}>
-              <Ionicons name="grid-outline" size={20} color={themeStyles.accent} />
-              <Text style={[styles.normalNoticeText, { color: themeStyles.text }]}>
-                Standard App Grid Mode Active. Tap any app below or return to Dojo Hub.
+          {isLoadingApps ? (
+            <View style={styles.emptyBox}>
+              <ActivityIndicator size="small" color={themeStyles.accent} />
+              <Text style={[styles.emptyText, { color: themeStyles.subtext, marginTop: 8 }]}>
+                Loading distraction-free drawer...
               </Text>
             </View>
-          )}
+          ) : filteredApps.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={[styles.emptyText, { color: themeStyles.subtext }]}>
+                {searchQuery.trim().length > 0
+                  ? `No apps found matching "${searchQuery}"`
+                  : 'No apps in this category'}
+              </Text>
+            </View>
+          ) : null}
 
           {filteredApps.map((app) => (
             <View
@@ -553,6 +720,64 @@ export default function GhostLauncherScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Guided Walkthrough Modal for Setting Default Launcher */}
+      <Modal
+        visible={showGuidedModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGuidedModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.guidedModalBox,
+              { backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border },
+            ]}
+          >
+            <View style={styles.guidedIconCircle}>
+              <Ionicons name="phone-portrait-outline" size={32} color="#10B981" />
+            </View>
+
+            <Text style={[styles.guidedTitle, { color: themeStyles.text }]}>
+              Set NeuroNinja as Default Launcher
+            </Text>
+
+            <Text style={[styles.guidedStep, { color: themeStyles.subtext }]}>
+              1. Tap <Text style={{ fontWeight: 'bold', color: themeStyles.text }}>Continue</Text> below to open Android Default App settings.
+            </Text>
+            <Text style={[styles.guidedStep, { color: themeStyles.subtext }]}>
+              2. Tap <Text style={{ fontWeight: 'bold', color: '#10B981' }}>NeuroNinja</Text> in the list.
+            </Text>
+            <Text style={[styles.guidedStep, { color: themeStyles.subtext }]}>
+              3. Press Back to return. Swiping up or pressing Home will now return directly to this mindful launcher.
+            </Text>
+
+            <View style={styles.guidedActions}>
+              <TouchableOpacity
+                style={[styles.guidedCancelBtn, { borderColor: themeStyles.border }]}
+                onPress={() => setShowGuidedModal(false)}
+              >
+                <Text style={{ color: themeStyles.subtext }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.guidedConfirmBtn, { backgroundColor: themeStyles.accent }]}
+                onPress={() => void handleConfirmSetDefault()}
+              >
+                <Text
+                  style={{
+                    color: theme === 'paper' ? '#FFFFFF' : '#070A11',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Continue to Settings
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* App Renaming Modal */}
       <Modal
@@ -656,9 +881,7 @@ export default function GhostLauncherScreen() {
                 {!isDefaultLauncher && (
                   <TouchableOpacity
                     style={[styles.modalActionBtn, { backgroundColor: themeStyles.accent }]}
-                    onPress={() => {
-                      void handleSetDefaultLauncher();
-                    }}
+                    onPress={handleStartSetDefault}
                   >
                     <Ionicons
                       name="phone-portrait-outline"
@@ -689,7 +912,7 @@ export default function GhostLauncherScreen() {
                       Switch to Normal / Standard Launcher
                     </Text>
                     <Text style={[styles.secondaryBtnSub, { color: themeStyles.subtext }]}>
-                      Change default home app back to your system launcher (Pixel Launcher, Samsung One UI, Nova, etc.)
+                      Change default home app back to your system launcher (Pixel Launcher, Samsung One UI, Moto Home, Nova, etc.)
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -919,38 +1142,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     padding: 0,
   },
+  categoryScroll: {
+    height: 44,
+    maxHeight: 44,
+    marginVertical: 6,
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   categoryRow: {
     flexDirection: 'row',
     gap: 8,
-    paddingVertical: 10,
+    alignItems: 'center',
+    paddingHorizontal: 2,
   },
   categoryPill: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    height: 32,
+    paddingHorizontal: 14,
+    borderRadius: 16,
     borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   categoryPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   appList: {
     paddingVertical: 8,
     gap: 4,
   },
-  normalNoticeBox: {
-    flexDirection: 'row',
+  emptyBox: {
+    paddingVertical: 32,
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
   },
-  normalNoticeText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
+  emptyText: {
+    fontSize: 13,
+    fontStyle: 'italic',
   },
   appRow: {
     flexDirection: 'row',
@@ -986,7 +1213,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'android' ? 20 : 14,
     borderTopWidth: 0.5,
   },
   exitText: {
@@ -1034,6 +1262,53 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  guidedModalBox: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+  },
+  guidedIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  guidedTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  guidedStep: {
+    fontSize: 13,
+    lineHeight: 19,
+    width: '100%',
+    marginBottom: 8,
+  },
+  guidedActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 18,
+    width: '100%',
+  },
+  guidedCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  guidedConfirmBtn: {
+    flex: 1.5,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
   },
   settingsModalBox: {
     width: '100%',
