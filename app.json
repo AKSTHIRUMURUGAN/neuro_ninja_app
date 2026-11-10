@@ -1,23 +1,39 @@
 {
   "expo": {
-    "name": "neuro_ninja",
-    "slug": "neuro_ninja",
+    "name": "NeuroNinja",
+    "slug": "neuro-ninja",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "neuroninja",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.neuroninja.app",
+      "appleTeamId": "YOUR_TEAM_ID",
+      "supportsTablet": false,
+      "icon": "./assets/expo.icon",
+      "entitlements": {
+        "com.apple.developer.family-controls": true,
+        "com.apple.security.application-groups": [
+          "group.com.neuroninja.app.blocker"
+        ]
+      }
     },
     "android": {
+      "package": "com.neuroninja.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "PACKAGE_USAGE_STATS",
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "server",
@@ -28,12 +44,84 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#090D16",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 90
+        }
+      ],
+      [
+        "expo-app-blocker",
+        {
+          "ios": {
+            "appGroup": "group.com.neuroninja.app.blocker",
+            "shield": {
+              "title": "NeuroNinja Shield",
+              "subtitle": "{appName} is sealed to protect your focus.",
+              "primaryButtonLabel": "Breach with Challenge",
+              "secondaryButtonLabel": "Return to Focus",
+              "primaryButtonColor": "#10B981",
+              "titleColor": "#F8FAFC",
+              "subtitleColor": "#94A3B8",
+              "backgroundColor": "#090D16",
+              "backgroundBlurStyle": "systemThickMaterialDark",
+              "tempUnlockTitle": "Focus Released",
+              "tempUnlockSubtitle": "Your earned time is ready. Breathe & be mindful.",
+              "tempUnlockButtonLabel": "Enter App"
+            },
+            "notification": {
+              "title": "NeuroNinja Focus Guard",
+              "body": "Tap to enter the Dojo and claim an unlocked focus window."
+            }
+          },
+          "android": {
+            "notificationTitle": "NeuroNinja Focus Shield Active",
+            "notificationText": "Monitoring distraction barriers."
+          }
         }
       ]
     ],
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "DeviceActivityMonitor",
+                  "bundleIdentifier": "com.neuroninja.app.DeviceActivityMonitor",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.neuroninja.app.blocker"
+                    ]
+                  }
+                },
+                {
+                  "targetName": "ShieldAction",
+                  "bundleIdentifier": "com.neuroninja.app.ShieldAction",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.neuroninja.app.blocker"
+                    ]
+                  }
+                },
+                {
+                  "targetName": "ShieldConfiguration",
+                  "bundleIdentifier": "com.neuroninja.app.ShieldConfiguration",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.neuroninja.app.blocker"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
