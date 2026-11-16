@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useNinjaAlert } from '../../context/ninja-alert-context';
 
 import {
   getReminders,
@@ -21,6 +21,7 @@ import {
 
 export default function RemindersScreen() {
   const router = useRouter();
+  const { showAlert } = useNinjaAlert();
   const [reminders, setReminders] = useState<SmartReminder[]>([]);
 
   useEffect(() => {
@@ -38,7 +39,12 @@ export default function RemindersScreen() {
 
   const handleTestAlert = async (r: SmartReminder) => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert(r.title, r.description);
+    showAlert({
+      title: r.title,
+      message: r.description,
+      type: 'warning',
+      icon: 'bell-ring',
+    });
   };
 
   return (

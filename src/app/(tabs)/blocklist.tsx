@@ -22,6 +22,8 @@ import {
 import { useNinja } from '../../context/ninja-context';
 import { NinjaPalette } from '../../constants/theme';
 import { blockerEngine } from '../../services/blocker/blocker-engine';
+import { AppIcon } from '../../components/ui/app-icon';
+import { AppConfigModal } from '../../components/armory/app-config-modal';
 
 const COMMON_DISTRACTIONS = [
   { name: 'Instagram', pkg: 'com.instagram.android' },
@@ -38,6 +40,7 @@ export default function BlocklistScreen() {
     settings,
     setIOSSelection,
     setAndroidSelection,
+    updateQuotaPolicy,
   } = useNinja();
 
   // Android state
@@ -45,6 +48,7 @@ export default function BlocklistScreen() {
   const [loadingApps, setLoadingApps] = useState(Platform.OS === 'android');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'sealed'>('all');
+  const [selectedAppForConfig, setSelectedAppForConfig] = useState<AndroidBlockableApp | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -262,33 +266,92 @@ export default function BlocklistScreen() {
               ) : (
                 filteredApps.map((app) => {
                   const isBlocked = settings.androidBlockedPackages.includes(app.packageName);
+                  const policy = settings.appQuotaPolicies[app.packageName];
+                  const isDoom =
+                    policy?.protectionMode === 'doom_barrier' ||
+                    (!policy?.protectionMode &&
+                      (app.name.toLowerCase().includes('instagram') ||
+                        app.name.toLowerCase().includes('youtube') ||
+                        app.name.toLowerCase().includes('tiktok') ||
+                        app.name.toLowerCase().includes('reddit') ||
+                        app.name.toLowerCase().includes('snapchat')));
+                  const hasCustom = policy?.hasCustomSecurity;
+
                   return (
-                    <View key={app.packageName} style={styles.appRow}>
-                      <View style={styles.appIconCircle}>
-                        <MaterialCommunityIcons
-                          name="application"
-                          size={22}
-                          color={isBlocked ? NinjaPalette.emerald : NinjaPalette.textSecondary}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.appLabel}>{app.name}</Text>
+                    <TouchableOpacity
+                      key={app.packageName}
+                      style={[styles.appRow, isBlocked && styles.appRowBlocked]}
+                      activeOpacity={0.7}
+                      onPress={() => setSelectedAppForConfig(app)}
+                    >
+                      <AppIcon
+                        packageName={app.packageName}
+                        appName={app.name}
+                        iconBase64={app.iconBase64}
+                        size={42}
+                      />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <Text style={styles.appLabel}>{app.name}</Text>
+                          {isDoom ? (
+                            <View style={styles.doomBadge}>
+                              <MaterialCommunityIcons name="fire" size={10} color="#EF4444" />
+                              <Text style={styles.doomBadgeText}>DOOM</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.vaultBadge}>
+                              <MaterialCommunityIcons name="shield-lock" size={10} color="#00E699" />
+                              <Text style={styles.vaultBadgeText}>VAULT</Text>
+                            </View>
+                          )}
+                          {hasCustom && (
+                            <View style={styles.customBadge}>
+                              <Text style={styles.customBadgeText}>CUSTOM LOCK</Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.appPackage} numberOfLines={1}>
                           {app.packageName}
                         </Text>
                       </View>
-                      <Switch
-                        value={isBlocked}
-                        onValueChange={() => toggleAndroidPackage(app.packageName)}
-                        thumbColor={isBlocked ? NinjaPalette.emerald : '#94A3B8'}
-                        trackColor={{ false: '#1E293B', true: 'rgba(16, 185, 129, 0.4)' }}
-                      />
-                    </View>
+                      <View style={styles.rowActions}>
+                        <TouchableOpacity
+                          style={styles.gearBtn}
+                          onPress={() => setSelectedAppForConfig(app)}
+                        >
+                          <MaterialCommunityIcons name="shield-edit-outline" size={18} color="#94A3B8" />
+                        </TouchableOpacity>
+                        <Switch
+                          value={isBlocked}
+                          onValueChange={() => toggleAndroidPackage(app.packageName)}
+                          thumbColor={isBlocked ? NinjaPalette.emerald : '#94A3B8'}
+                          trackColor={{ false: '#1E293B', true: 'rgba(0, 230, 153, 0.4)' }}
+                        />
+                      </View>
+                    </TouchableOpacity>
                   );
                 })
               )}
             </ScrollView>
           )}
+
+          <AppConfigModal
+            visible={!!selectedAppForConfig}
+            app={selectedAppForConfig}
+            isSealed={
+              selectedAppForConfig
+                ? settings.androidBlockedPackages.includes(selectedAppForConfig.packageName)
+                : false
+            }
+            currentPolicy={
+              selectedAppForConfig
+                ? settings.appQuotaPolicies[selectedAppForConfig.packageName]
+                : undefined
+            }
+            onToggleSeal={toggleAndroidPackage}
+            onSavePolicy={updateQuotaPolicy}
+            onClose={() => setSelectedAppForConfig(null)}
+          />
         </View>
       )}
     </SafeAreaView>
@@ -464,10 +527,70 @@ const styles = StyleSheet.create({
   appRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  appRowBlocked: {
+    backgroundColor: 'rgba(0, 230, 153, 0.02)',
+  },
+  doomBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  doomBadgeText: {
+    color: '#EF4444',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  vaultBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0, 230, 153, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.3)',
+  },
+  vaultBadgeText: {
+    color: '#00E699',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  customBadge: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  customBadgeText: {
+    color: '#38BDF8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  rowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gearBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#0F172A',
   },
   appIconCircle: {
     width: 38,

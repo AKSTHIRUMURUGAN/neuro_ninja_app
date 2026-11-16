@@ -13,11 +13,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { useNinja } from '../../context/ninja-context';
+import { useNinjaAlert } from '../../context/ninja-alert-context';
 import { NinjaPalette } from '../../constants/theme';
 import { NinjaCompanion } from '../../components/ninja-companion';
+import { LifeOSTodayBrief } from '../../components/lifeos/today-brief';
 
 export default function DojoScreen() {
   const router = useRouter();
+  const { showToast } = useNinjaAlert();
   const {
     settings,
     isArmed,
@@ -26,6 +29,29 @@ export default function DojoScreen() {
     toggleShield,
     relockNow,
   } = useNinja();
+
+  const handleSealNow = async () => {
+    await relockNow();
+    showToast({
+      title: 'Focus Pass Sealed',
+      message: 'Shield re-engaged across all applications.',
+      type: 'shield',
+      icon: 'shield-lock',
+    });
+  };
+
+  const handleToggleShield = async () => {
+    const nextState = !isArmed;
+    await toggleShield();
+    showToast({
+      title: nextState ? 'Shield Armed' : 'Shield Disarmed',
+      message: nextState
+        ? 'All distraction sources sealed behind mindful gates.'
+        : 'Shield lowered. Free access granted.',
+      type: nextState ? 'shield' : 'warning',
+      icon: nextState ? 'shield-check' : 'shield-off-outline',
+    });
+  };
 
   const totalAppsCount =
     Platform.OS === 'ios'
@@ -76,7 +102,7 @@ export default function DojoScreen() {
                   : 'Time running on open apps'}
               </Text>
             </View>
-            <TouchableOpacity style={styles.relockButton} onPress={relockNow}>
+            <TouchableOpacity style={styles.relockButton} onPress={handleSealNow}>
               <MaterialCommunityIcons name="lock" size={16} color="#070A11" />
               <Text style={styles.relockButtonText}>Seal Now</Text>
             </TouchableOpacity>
@@ -89,11 +115,14 @@ export default function DojoScreen() {
           totalFocusCoins={settings.focusCoins ?? 120}
         />
 
+        {/* LifeOS Today Dashboard Brief */}
+        <LifeOSTodayBrief />
+
         {/* Master Shield Activation Center */}
         <View style={[styles.shieldHeroCard, isArmed && styles.shieldHeroCardArmed]}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={toggleShield}
+            onPress={handleToggleShield}
             style={[styles.shieldOrb, isArmed ? styles.shieldOrbArmed : styles.shieldOrbDisarmed]}
           >
             <MaterialCommunityIcons
@@ -117,7 +146,7 @@ export default function DojoScreen() {
               styles.toggleActionBtn,
               isArmed ? styles.toggleActionBtnDisarm : styles.toggleActionBtnArm,
             ]}
-            onPress={toggleShield}
+            onPress={handleToggleShield}
           >
             <Text
               style={[

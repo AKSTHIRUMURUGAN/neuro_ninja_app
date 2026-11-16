@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -33,7 +33,6 @@ export function CamouflageDecoy({
 
   const handleClose = () => {
     onExit();
-    BackHandler.exitApp();
   };
 
   return (

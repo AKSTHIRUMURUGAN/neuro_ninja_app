@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Modal,
   TextInput,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NinjaPalette } from '../../constants/theme';
+import { useNinjaAlert } from '../../context/ninja-alert-context';
 
 interface StudyRoom {
   id: string;
@@ -76,6 +76,7 @@ const INITIAL_ROOMS: StudyRoom[] = [
 
 export default function StudyRoomsScreen() {
   const router = useRouter();
+  const { showAlert, showToast } = useNinjaAlert();
   const [rooms, setRooms] = useState<StudyRoom[]>(INITIAL_ROOMS);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'exam' | 'craft'>('all');
   const [joinedRoomId, setJoinedRoomId] = useState<string | null>(null);
@@ -108,16 +109,18 @@ export default function StudyRoomsScreen() {
   const handleJoinRoom = async (room: StudyRoom) => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setJoinedRoomId(room.id);
-    Alert.alert(
-      `Joined ${room.title}!`,
-      `You are now synced with ${room.activeParticipants} fellow Ninjas. Launching synchronized focus sprint (${room.currentCycle}).`,
-      [
+    showAlert({
+      title: `Joined ${room.title}!`,
+      message: `You are now synced with ${room.activeParticipants} fellow Ninjas. Launching synchronized focus sprint (${room.currentCycle}).`,
+      type: 'success',
+      icon: 'account-group',
+      buttons: [
         {
           text: 'Enter Focus Chamber',
           onPress: () => router.push('/focus/pomodoro' as any),
         },
-      ]
-    );
+      ],
+    });
   };
 
   const handleOpenCreateModal = async () => {
@@ -127,7 +130,12 @@ export default function StudyRoomsScreen() {
 
   const handleSaveCustomRoom = async () => {
     if (!newTitle.trim()) {
-      Alert.alert('Title Required', 'Please enter a name for your study room.');
+      showToast({
+        title: 'Title Required',
+        message: 'Please enter a name for your study room.',
+        type: 'warning',
+        icon: 'alert-outline',
+      });
       return;
     }
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -153,16 +161,18 @@ export default function StudyRoomsScreen() {
       console.warn('Failed to persist custom study room:', e);
     }
 
-    Alert.alert(
-      'Study Room Created!',
-      `"${newRoom.title}" is now open. Invite link: neuroninja://room/join?id=${newRoom.id}`,
-      [
+    showAlert({
+      title: 'Study Room Created!',
+      message: `"${newRoom.title}" is now open for focus sprints.`,
+      type: 'success',
+      icon: 'door-open',
+      buttons: [
         {
           text: 'Start Sprint Now',
           onPress: () => router.push('/focus/pomodoro' as any),
         },
-      ]
-    );
+      ],
+    });
   };
 
   return (

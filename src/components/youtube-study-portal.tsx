@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { NinjaPalette } from '../constants/theme';
+import { useNinjaAlert } from '../context/ninja-alert-context';
 
 export interface StudyChannel {
   id: string;
@@ -22,13 +23,19 @@ export const STUDY_CHANNELS: StudyChannel[] = [
 ];
 
 export function YouTubeStudyPortal() {
+  const { showToast } = useNinjaAlert();
   const handleOpenChannel = async (channel: StudyChannel) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const canOpen = await Linking.canOpenURL(channel.url);
     if (canOpen) {
       await Linking.openURL(channel.url);
     } else {
-      Alert.alert('Cannot open URL', channel.url);
+      showToast({
+        title: 'Cannot Open URL',
+        message: channel.url,
+        type: 'error',
+        icon: 'link-variant-off',
+      });
     }
   };
 

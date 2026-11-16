@@ -14,6 +14,7 @@ import { NinjaPalette } from '../../constants/theme';
 import { getTodayKey } from '../../services/storage';
 import { UsageTimeline } from '../../components/usage-timeline';
 import { DoomscrollCard } from '../../components/doomscroll-card';
+import { AppQuotaModal } from '../../components/wellbeing/app-quota-modal';
 
 function getNinjaRank(intercepts: number): { title: string; color: string; desc: string } {
   if (intercepts >= 300) {
@@ -35,8 +36,9 @@ function getNinjaRank(intercepts: number): { title: string; color: string; desc:
 }
 
 export default function StatsScreen() {
-  const { settings, syncIntercepts } = useNinja();
+  const { settings, syncIntercepts, updateQuotaPolicy } = useNinja();
   const [syncing, setSyncing] = useState(false);
+  const [selectedApp, setSelectedApp] = useState<{ pkg: string; name: string } | null>(null);
 
   const totalIntercepts = settings.totalInterceptsCount || 0;
   const hoursSaved = ((totalIntercepts * 15) / 60).toFixed(1);
@@ -180,10 +182,10 @@ export default function StatsScreen() {
         {/* Deep Digital Wellbeing & 24h Rhythm */}
         <View style={{ marginBottom: 20 }}>
           <UsageTimeline
-            totalSotMinutes={Math.max(60, todayStat.minutesEarned * 3 + 45)}
-            addictionScore={Math.min(95, Math.max(15, 60 - totalIntercepts * 4))}
-            distractionIndex={Math.min(80, Math.max(10, 45 - todayStat.intercepts * 2))}
-            productivityRatio={Math.min(98, 40 + todayStat.minutesEarned * 2)}
+            todayStat={todayStat}
+            totalIntercepts={totalIntercepts}
+            policies={settings.appQuotaPolicies}
+            onEditAppQuota={(pkg, name) => setSelectedApp({ pkg, name })}
           />
         </View>
 
@@ -203,6 +205,20 @@ export default function StatsScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* App Quota & Curfew Setup Modal */}
+      {selectedApp && (
+        <AppQuotaModal
+          visible={!!selectedApp}
+          appName={selectedApp.name}
+          packageName={selectedApp.pkg}
+          currentPolicy={settings.appQuotaPolicies[selectedApp.pkg]}
+          onClose={() => setSelectedApp(null)}
+          onSave={(newPolicy) => {
+            void updateQuotaPolicy(selectedApp.pkg, newPolicy);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }

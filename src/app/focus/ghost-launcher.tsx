@@ -11,8 +11,8 @@ import {
   Image,
   AppState,
   Switch,
-  Alert,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useNinja } from '../../context/ninja-context';
+import { useNinjaAlert } from '../../context/ninja-alert-context';
 import { blockerEngine } from '../../services/blocker/blocker-engine';
 import {
   checkLauncherStatus,
@@ -37,6 +38,7 @@ export interface GhostApp {
   category: 'Communication' | 'Productivity' | 'Study' | 'Utility' | 'Media' | 'General';
   isFavorite: boolean;
   isHidden: boolean;
+  delaySeconds?: number;
   iconBase64?: string | null;
 }
 
@@ -109,6 +111,7 @@ type ThemeMode = 'oled' | 'slate' | 'paper';
 
 export default function GhostLauncherScreen() {
   const router = useRouter();
+  const { showAlert, showToast } = useNinjaAlert();
   const { settings, setGhostLauncherAsHome } = useNinja();
 
   const [profile, setProfile] = useState<LauncherProfile>('minimal');
@@ -125,13 +128,95 @@ export default function GhostLauncherScreen() {
   const [showGuidedModal, setShowGuidedModal] = useState<boolean>(false);
   const [bannerDismissed, setBannerDismissed] = useState<boolean>(false);
 
-  // App Renaming Modal
+  // App Renaming & Mindful Delay Modals
   const [renamingApp, setRenamingApp] = useState<GhostApp | null>(null);
   const [renameInput, setRenameInput] = useState('');
+  const [delayConfigs, setDelayConfigs] = useState<Record<string, number>>({});
+  const [mindfulDelayApp, setMindfulDelayApp] = useState<{
+    app: GhostApp;
+    countdown: number;
+    initial: number;
+  } | null>(null);
+  const [appContextMenu, setAppContextMenu] = useState<GhostApp | null>(null);
 
   // Clock
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
+
+  // Hardware & Gesture BackHandler (Minimalist Phone Parity)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const onBackPress = () => {
+      if (showSettingsModal) {
+        setShowSettingsModal(false);
+        return true;
+      }
+      if (showGuidedModal) {
+        setShowGuidedModal(false);
+        return true;
+      }
+      if (renamingApp !== null) {
+        setRenamingApp(null);
+        return true;
+      }
+      if (mindfulDelayApp !== null) {
+        setMindfulDelayApp(null);
+        return true;
+      }
+      if (appContextMenu !== null) {
+        setAppContextMenu(null);
+        return true;
+      }
+      if (searchQuery.trim().length > 0) {
+        setSearchQuery('');
+        return true;
+      }
+      if (selectedCategory !== 'All') {
+        setSelectedCategory('All');
+        return true;
+      }
+      if (profile !== 'minimal') {
+        setProfile('minimal');
+        return true;
+      }
+
+      // Sitting on Minimal Home Desktop: a true launcher NEVER exits on Back press!
+      if (isDefaultLauncher || settings.ghostLauncherAsHome) {
+        return true;
+      }
+      return false;
+    };
+
+    const backSub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => backSub.remove();
+  }, [
+    showSettingsModal,
+    showGuidedModal,
+    renamingApp,
+    mindfulDelayApp,
+    appContextMenu,
+    searchQuery,
+    selectedCategory,
+    profile,
+    isDefaultLauncher,
+    settings.ghostLauncherAsHome,
+  ]);
+
+  // Mindful Delay Countdown Timer
+  useEffect(() => {
+    if (!mindfulDelayApp || mindfulDelayApp.countdown <= 0) return;
+    const timer = setInterval(() => {
+      setMindfulDelayApp((prev) => {
+        if (!prev) return null;
+        if (prev.countdown <= 1) {
+          return { ...prev, countdown: 0 };
+        }
+        return { ...prev, countdown: prev.countdown - 1 };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [mindfulDelayApp]);
 
   // Check launcher status and register resume listener
   useEffect(() => {
@@ -160,19 +245,36 @@ export default function GhostLauncherScreen() {
     };
   }, []);
 
-  // Load Real Installed Applications
+  // Load Real Installed Applications (Optimized for 0ms Boot & ANR Prevention)
   useEffect(() => {
     let isMounted = true;
     void (async () => {
       try {
+        // Step 1: Instant hydration from persistent local cache (0ms first frame render)
+        const cachedRaw = await AsyncStorage.getItem('@ghost_launcher_cached_apps_v3');
+        if (cachedRaw && isMounted) {
+          try {
+            const cachedList: GhostApp[] = JSON.parse(cachedRaw);
+            if (cachedList && cachedList.length > 0) {
+              setApps(cachedList);
+              setIsLoadingApps(false);
+            }
+          } catch {}
+        }
+
+        // Step 2: Ultra-fast native metadata query (includeIcons = false avoids Base64 PNG encoding on boot)
         const [installedApps, savedPrefsRaw] = await Promise.all([
-          blockerEngine.getInstalledApps(),
+          blockerEngine.getInstalledApps(false),
           AsyncStorage.getItem('@ghost_launcher_user_prefs_v2'),
         ]);
 
         const savedPrefs = savedPrefsRaw
           ? JSON.parse(savedPrefsRaw)
-          : { favorites: [], aliases: {}, hidden: [] };
+          : { favorites: [], aliases: {}, hidden: [], delays: {} };
+
+        if (savedPrefs.delays) {
+          setDelayConfigs(savedPrefs.delays);
+        }
 
         const builtInPortals: GhostApp[] = [
           {
@@ -201,12 +303,16 @@ export default function GhostLauncherScreen() {
           category: inferCategory(app.packageName, app.name),
           isFavorite: savedPrefs.favorites?.includes(app.packageName) ?? false,
           isHidden: savedPrefs.hidden?.includes(app.packageName) ?? false,
-          iconBase64: app.iconBase64,
+          iconBase64: null,
         }));
 
+        const combinedApps = [...builtInPortals, ...realAppItems];
+
         if (isMounted) {
-          setApps([...builtInPortals, ...realAppItems]);
+          setApps(combinedApps);
           setIsLoadingApps(false);
+          // Persist to cache for instantaneous cold-boot display
+          void AsyncStorage.setItem('@ghost_launcher_cached_apps_v3', JSON.stringify(combinedApps));
         }
       } catch (err) {
         console.warn('Failed to load installed apps for ghost launcher:', err);
@@ -237,8 +343,12 @@ export default function GhostLauncherScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const savePreferences = async (updatedApps: GhostApp[]) => {
+  const savePreferences = async (
+    updatedApps: GhostApp[],
+    customDelays?: Record<string, number>
+  ) => {
     try {
+      const activeDelays = customDelays !== undefined ? customDelays : delayConfigs;
       const prefs = {
         favorites: updatedApps.filter((a) => a.isFavorite).map((a) => a.id),
         hidden: updatedApps.filter((a) => a.isHidden).map((a) => a.id),
@@ -246,12 +356,90 @@ export default function GhostLauncherScreen() {
           if (a.customName && a.customName.trim()) acc[a.id] = a.customName.trim();
           return acc;
         }, {}),
+        delays: activeDelays,
       };
       await AsyncStorage.setItem('@ghost_launcher_user_prefs_v2', JSON.stringify(prefs));
     } catch (e) {
       console.warn('Failed to save ghost launcher prefs:', e);
     }
   };
+
+  const handleSetDelay = async (pkgOrId: string, seconds: number) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const updated = { ...delayConfigs, [pkgOrId]: seconds };
+    if (seconds <= 0) {
+      delete updated[pkgOrId];
+    }
+    setDelayConfigs(updated);
+    void savePreferences(apps, updated);
+    setAppContextMenu(null);
+  };
+
+  const handleLaunchApp = async (app: GhostApp, bypassDelay = false) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Minimalist Phone Parity: Mindful Delay Cognitive Pause
+    const delay = delayConfigs[app.packageName || app.id];
+    if (delay && delay > 0 && !bypassDelay) {
+      setMindfulDelayApp({ app, countdown: delay, initial: delay });
+      return;
+    }
+
+    if (app.id === 'portal_study' || app.packageName === 'builtin.study_portal') {
+      router.push('/focus/pomodoro' as any);
+      return;
+    }
+    if (app.id === 'portal_arcade' || app.packageName === 'builtin.dojo_brain') {
+      router.push('/dojo-games' as any);
+      return;
+    }
+    if (app.packageName && Platform.OS === 'android') {
+      const success = launchApplication(app.packageName);
+      if (!success) {
+        showToast({
+          title: 'App Launch',
+          message: `Could not open ${app.name}.`,
+          type: 'error',
+          icon: 'alert-circle-outline',
+        });
+      }
+    }
+  };
+
+  const filteredApps = useMemo(() => {
+    let list = apps.filter((a) => !a.isHidden);
+
+    if (profile === 'deep_focus') {
+      list = list.filter((a) => a.isFavorite).slice(0, 3);
+      return list;
+    }
+
+    // In Minimal Home mode, display curated favorites (Minimalist Phone Home Desktop)
+    if (profile === 'minimal' && !searchQuery.trim() && selectedCategory === 'All') {
+      const favs = list.filter((a) => a.isFavorite);
+      if (favs.length > 0) {
+        return favs;
+      }
+      return list.slice(0, 8);
+    }
+
+    if (selectedCategory === 'Favorites') {
+      list = list.filter((a) => a.isFavorite);
+    } else if (selectedCategory !== 'All') {
+      list = list.filter((a) => a.category === selectedCategory);
+    }
+
+    if (searchQuery.trim().length > 0) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (a) =>
+          (a.customName || a.name).toLowerCase().includes(q) ||
+          a.category.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [apps, profile, selectedCategory, searchQuery]);
 
   const themeStyles = useMemo(() => {
     if (theme === 'paper') {
@@ -303,10 +491,12 @@ export default function GhostLauncherScreen() {
     await setGhostLauncherAsHome(false);
     const opened = openNormalLauncherSettings();
     if (!opened) {
-      Alert.alert(
-        'Default Apps',
-        'Open Android Settings > Apps > Default Apps > Home App to choose your standard phone launcher.'
-      );
+      showAlert({
+        title: 'Default Apps',
+        message: 'Open Android Settings > Apps > Default Apps > Home App to choose your standard phone launcher.',
+        type: 'info',
+        icon: 'cog-outline',
+      });
     }
   };
 
@@ -349,50 +539,6 @@ export default function GhostLauncherScreen() {
     });
     setRenamingApp(null);
   };
-
-  const handleLaunchApp = async (app: GhostApp) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (app.id === 'portal_study' || app.packageName === 'builtin.study_portal') {
-      router.push('/focus/pomodoro' as any);
-      return;
-    }
-    if (app.id === 'portal_arcade' || app.packageName === 'builtin.dojo_brain') {
-      router.push('/dojo-games' as any);
-      return;
-    }
-    if (app.packageName && Platform.OS === 'android') {
-      const success = launchApplication(app.packageName);
-      if (!success) {
-        Alert.alert('App Launch', `Could not open ${app.name}.`);
-      }
-    }
-  };
-
-  const filteredApps = useMemo(() => {
-    let list = apps.filter((a) => !a.isHidden);
-
-    if (profile === 'deep_focus') {
-      list = list.filter((a) => a.isFavorite).slice(0, 3);
-      return list;
-    }
-
-    if (selectedCategory === 'Favorites') {
-      list = list.filter((a) => a.isFavorite);
-    } else if (selectedCategory !== 'All') {
-      list = list.filter((a) => a.category === selectedCategory);
-    }
-
-    if (searchQuery.trim().length > 0) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(
-        (a) =>
-          (a.customName || a.name).toLowerCase().includes(q) ||
-          a.category.toLowerCase().includes(q)
-      );
-    }
-
-    return list;
-  }, [apps, profile, selectedCategory, searchQuery]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: themeStyles.bg }]}>
@@ -648,75 +794,108 @@ export default function GhostLauncherScreen() {
             </View>
           ) : null}
 
-          {filteredApps.map((app) => (
-            <View
-              key={app.id}
-              style={[styles.appRow, { borderBottomColor: themeStyles.border }]}
-            >
-              <TouchableOpacity
-                style={styles.appLaunchTarget}
-                onPress={() => void handleLaunchApp(app)}
-                activeOpacity={0.7}
+          {filteredApps.map((app) => {
+            const activeDelay = delayConfigs[app.packageName || app.id] || 0;
+            return (
+              <View
+                key={app.id}
+                style={[styles.appRow, { borderBottomColor: themeStyles.border }]}
               >
-                <Text style={[styles.appName, { color: themeStyles.text }]}>
-                  {app.customName || app.name}
-                </Text>
-                {app.customName && (
-                  <Text style={[styles.appCategory, { color: themeStyles.subtext }]}>
-                    Original: {app.name}
+                <TouchableOpacity
+                  style={styles.appLaunchTarget}
+                  onPress={() => void handleLaunchApp(app)}
+                  onLongPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                    setAppContextMenu(app);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.appName, { color: themeStyles.text }]}>
+                    {app.customName || app.name}
                   </Text>
-                )}
-                {!app.customName && (
                   <Text style={[styles.appCategory, { color: themeStyles.subtext }]}>
-                    {app.category}
+                    {app.customName ? `Original: ${app.name}` : app.category}
+                    {activeDelay > 0 ? `  ·  ⏳ ${activeDelay}s Delay` : ''}
                   </Text>
+                </TouchableOpacity>
+
+                {profile !== 'deep_focus' && (
+                  <View style={styles.rowControls}>
+                    <TouchableOpacity
+                      style={styles.iconBtn}
+                      onPress={() => void toggleFavorite(app.id)}
+                    >
+                      <Ionicons
+                        name={app.isFavorite ? 'star' : 'star-outline'}
+                        size={18}
+                        color={app.isFavorite ? '#F59E0B' : themeStyles.subtext}
+                      />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.iconBtn}
+                      onPress={() => setAppContextMenu(app)}
+                    >
+                      <Ionicons
+                        name="ellipsis-horizontal"
+                        size={16}
+                        color={themeStyles.subtext}
+                      />
+                    </TouchableOpacity>
+                  </View>
                 )}
-              </TouchableOpacity>
+              </View>
+            );
+          })}
 
-              {profile !== 'deep_focus' && (
-                <View style={styles.rowControls}>
-                  <TouchableOpacity
-                    style={styles.iconBtn}
-                    onPress={() => void toggleFavorite(app.id)}
-                  >
-                    <Ionicons
-                      name={app.isFavorite ? 'star' : 'star-outline'}
-                      size={18}
-                      color={app.isFavorite ? '#F59E0B' : themeStyles.subtext}
-                    />
-                  </TouchableOpacity>
+          {/* Minimalist Phone Navigation between Favorites Home & Full Alphabetical Drawer */}
+          {!isLoadingApps && profile === 'minimal' && !searchQuery.trim() && (
+            <TouchableOpacity
+              style={[
+                styles.drawerSwitchBtn,
+                { borderColor: themeStyles.border, backgroundColor: themeStyles.cardBg },
+              ]}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setProfile('normal');
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.drawerSwitchText, { color: themeStyles.text }]}>
+                All Apps ({apps.filter((a) => !a.isHidden).length})
+              </Text>
+              <Ionicons name="arrow-forward" size={16} color={themeStyles.accent} />
+            </TouchableOpacity>
+          )}
 
-                  <TouchableOpacity
-                    style={styles.iconBtn}
-                    onPress={() => handleStartRename(app)}
-                  >
-                    <MaterialCommunityIcons
-                      name="pencil-outline"
-                      size={16}
-                      color={themeStyles.subtext}
-                    />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.iconBtn}
-                    onPress={() => void toggleHide(app.id)}
-                  >
-                    <Ionicons name="eye-off-outline" size={16} color={themeStyles.subtext} />
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          ))}
+          {!isLoadingApps && profile === 'normal' && (
+            <TouchableOpacity
+              style={[
+                styles.drawerSwitchBtn,
+                { borderColor: themeStyles.border, backgroundColor: themeStyles.cardBg },
+              ]}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setProfile('minimal');
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="arrow-back" size={16} color={themeStyles.accent} />
+              <Text style={[styles.drawerSwitchText, { color: themeStyles.text }]}>
+                Back to Minimal Home Favorites
+              </Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
 
-        {/* Exit Ghost Mode to Dojo */}
+        {/* Access NeuroNinja Focus Suite */}
         <TouchableOpacity
           style={[styles.exitBtn, { borderTopColor: themeStyles.border }]}
           onPress={() => router.replace('/(tabs)' as any)}
         >
-          <Ionicons name="arrow-back-outline" size={18} color={themeStyles.subtext} />
+          <MaterialCommunityIcons name="shield-half-full" size={18} color={themeStyles.accent} />
           <Text style={[styles.exitText, { color: themeStyles.subtext }]}>
-            Exit Launcher to Dojo Hub
+            NeuroNinja Dojo & App Blocker →
           </Text>
         </TouchableOpacity>
       </View>
@@ -980,6 +1159,209 @@ export default function GhostLauncherScreen() {
             >
               <Text style={{ color: themeStyles.text, fontWeight: '600' }}>Done</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* App Context Menu Modal (Long Press / Ellipsis) */}
+      <Modal
+        visible={appContextMenu !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAppContextMenu(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalBox,
+              { backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: themeStyles.text }]}>
+              {appContextMenu?.customName || appContextMenu?.name}
+            </Text>
+            <Text style={[styles.modalSub, { color: themeStyles.subtext, marginBottom: 14 }]}>
+              Mindful App Controls
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.contextRow, { borderColor: themeStyles.border }]}
+              onPress={() => {
+                if (appContextMenu) {
+                  void toggleFavorite(appContextMenu.id);
+                  setAppContextMenu(null);
+                }
+              }}
+            >
+              <Ionicons
+                name={appContextMenu?.isFavorite ? 'star' : 'star-outline'}
+                size={18}
+                color="#F59E0B"
+              />
+              <Text style={[styles.contextText, { color: themeStyles.text }]}>
+                {appContextMenu?.isFavorite ? 'Remove from Home Favorites' : 'Pin to Home Favorites'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.contextRow, { borderColor: themeStyles.border }]}
+              onPress={() => {
+                if (appContextMenu) {
+                  const target = appContextMenu;
+                  setAppContextMenu(null);
+                  handleStartRename(target);
+                }
+              }}
+            >
+              <MaterialCommunityIcons name="pencil-outline" size={18} color={themeStyles.subtext} />
+              <Text style={[styles.contextText, { color: themeStyles.text }]}>
+                Rename (Mindful Alias)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.contextRow, { borderColor: themeStyles.border }]}
+              onPress={() => {
+                if (appContextMenu) {
+                  void toggleHide(appContextMenu.id);
+                  setAppContextMenu(null);
+                }
+              }}
+            >
+              <Ionicons name="eye-off-outline" size={18} color={themeStyles.subtext} />
+              <Text style={[styles.contextText, { color: themeStyles.text }]}>
+                Hide from App List
+              </Text>
+            </TouchableOpacity>
+
+            <Text
+              style={[
+                styles.settingSectionTitle,
+                { color: themeStyles.accent, marginTop: 14, marginBottom: 8 },
+              ]}
+            >
+              MINDFUL LAUNCH DELAY
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[0, 5, 10, 15].map((sec) => {
+                const pkgKey = appContextMenu?.packageName || appContextMenu?.id || '';
+                const isSelected = (delayConfigs[pkgKey] || 0) === sec;
+                return (
+                  <TouchableOpacity
+                    key={sec}
+                    style={[
+                      styles.delayChip,
+                      { borderColor: isSelected ? themeStyles.accent : themeStyles.border },
+                      isSelected && { backgroundColor: 'rgba(0,230,153,0.12)' },
+                    ]}
+                    onPress={() => {
+                      if (pkgKey) void handleSetDelay(pkgKey, sec);
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: isSelected ? themeStyles.accent : themeStyles.subtext,
+                        fontSize: 12,
+                        fontWeight: '700',
+                      }}
+                    >
+                      {sec === 0 ? 'Off' : `${sec}s`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.modalBtn, { borderColor: themeStyles.border, alignSelf: 'stretch', alignItems: 'center' }]}
+              onPress={() => setAppContextMenu(null)}
+            >
+              <Text style={{ color: themeStyles.subtext }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Mindful Launch Delay Modal (Minimalist Phone Parity) */}
+      <Modal
+        visible={mindfulDelayApp !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMindfulDelayApp(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.guidedModalBox,
+              { backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border },
+            ]}
+          >
+            <View style={styles.guidedIconCircle}>
+              <Ionicons name="hourglass-outline" size={32} color="#10B981" />
+            </View>
+
+            <Text style={[styles.guidedTitle, { color: themeStyles.text }]}>
+              Mindful Pause
+            </Text>
+            <Text style={[styles.guidedStep, { color: themeStyles.subtext, textAlign: 'center' }]}>
+              Take a deep breath. Do you truly want to open{' '}
+              <Text style={{ color: themeStyles.text, fontWeight: '700' }}>
+                {mindfulDelayApp?.app.customName || mindfulDelayApp?.app.name}
+              </Text>
+              ?
+            </Text>
+
+            <Text
+              style={{
+                fontSize: 44,
+                fontWeight: '200',
+                color: mindfulDelayApp?.countdown === 0 ? '#10B981' : themeStyles.text,
+                marginVertical: 14,
+              }}
+            >
+              {mindfulDelayApp?.countdown === 0 ? 'Ready' : `${mindfulDelayApp?.countdown}s`}
+            </Text>
+
+            <View style={styles.guidedActions}>
+              <TouchableOpacity
+                style={[styles.guidedCancelBtn, { borderColor: themeStyles.border }]}
+                onPress={() => setMindfulDelayApp(null)}
+              >
+                <Text style={{ color: '#10B981', fontWeight: '700' }}>Stay Focused</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.guidedConfirmBtn,
+                  {
+                    backgroundColor:
+                      mindfulDelayApp?.countdown === 0 ? themeStyles.accent : '#27272A',
+                  },
+                ]}
+                disabled={mindfulDelayApp?.countdown !== 0}
+                onPress={() => {
+                  if (mindfulDelayApp) {
+                    const target = mindfulDelayApp.app;
+                    setMindfulDelayApp(null);
+                    void handleLaunchApp(target, true);
+                  }
+                }}
+              >
+                <Text
+                  style={{
+                    color:
+                      mindfulDelayApp?.countdown === 0
+                        ? theme === 'paper'
+                          ? '#FFFFFF'
+                          : '#070A11'
+                        : themeStyles.subtext,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Open App
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1386,6 +1768,39 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 12,
     borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  drawerSwitchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 18,
+    marginBottom: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  drawerSwitchText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  contextRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+  },
+  contextText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  delayChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
   },

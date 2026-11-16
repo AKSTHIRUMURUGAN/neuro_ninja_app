@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NinjaPalette } from '../constants/theme';
 import { loadNinjaSettings, addFocusCoins } from '../services/storage';
+import { useNinjaAlert } from '../context/ninja-alert-context';
 
 export interface PlantRecord {
   id: string;
@@ -17,6 +18,7 @@ export interface PlantRecord {
 const GROVE_STORAGE_KEY = '@neuro_ninja_focus_grove_v1';
 
 export function FocusGrove() {
+  const { showAlert, showToast } = useNinjaAlert();
   const [plants, setPlants] = useState<PlantRecord[]>([]);
   const [focusCoins, setFocusCoins] = useState(120);
   const [showArmory, setShowArmory] = useState(false);
@@ -56,13 +58,23 @@ export function FocusGrove() {
     cost: number
   ) => {
     if (focusCoins < cost) {
-      Alert.alert('Insufficient Coins', `You need ${cost} Focus Coins to acquire this rare seed.`);
+      showAlert({
+        title: 'Insufficient Coins',
+        message: `You need ${cost} Focus Coins to acquire this rare seed.`,
+        type: 'warning',
+        icon: 'coin',
+      });
       return;
     }
     await addFocusCoins(-cost);
     await addPlantToGrove(species, name, 25);
     await refreshGrove();
-    Alert.alert('Seed Acquired!', `${name} has been added to your Focus Garden.`);
+    showToast({
+      title: 'Seed Acquired!',
+      message: `${name} has been added to your Focus Garden.`,
+      type: 'success',
+      icon: 'sprout',
+    });
     setShowArmory(false);
   };
 

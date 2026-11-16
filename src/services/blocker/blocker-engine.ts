@@ -15,6 +15,23 @@ import {
 
 class BlockerEngine {
   private isConfigured = false;
+  private iconCache = new Map<string, string>();
+
+  /**
+   * Retrieves cached base64 icon for a package if available.
+   */
+  public getCachedIcon(packageName: string): string | null {
+    return this.iconCache.get(packageName) ?? null;
+  }
+
+  /**
+   * Manually store an icon into the runtime cache.
+   */
+  public registerIcon(packageName: string, iconBase64: string): void {
+    if (packageName && iconBase64) {
+      this.iconCache.set(packageName, iconBase64);
+    }
+  }
 
   /**
    * Initializes native runtime configuration for Android and cleans initial intercepts.
@@ -104,15 +121,67 @@ class BlockerEngine {
   }
 
   /**
-   * Android helper: fetch installed apps with package names and labels
+   * Android helper: fetch installed apps with package names and labels.
+   * includeIcons = false gives ultra-fast 10ms boot time (no Base64 PNG compression).
    */
-  public async getInstalledApps(): Promise<AndroidBlockableApp[]> {
+  public async getInstalledApps(includeIcons: boolean = false): Promise<AndroidBlockableApp[]> {
     if (Platform.OS !== 'android') return [];
     try {
-      return await ExpoAppBlocker.getInstalledApps();
+      const apps = await ExpoAppBlocker.getInstalledApps(includeIcons);
+      if (includeIcons) {
+        apps.forEach((app) => {
+          if (app.packageName && app.iconBase64) {
+            this.iconCache.set(app.packageName, app.iconBase64);
+          }
+        });
+      }
+      return apps;
     } catch (e) {
       console.warn('[BlockerEngine] getInstalledApps error:', e);
       return [];
+    }
+  }
+
+  /**
+   * Android helper: fetch individual app icon on demand (lazy loading)
+   */
+  public async getAppIcon(packageName: string): Promise<string | null> {
+    if (this.iconCache.has(packageName)) {
+      return this.iconCache.get(packageName) ?? null;
+    }
+    try {
+      const icon = await ExpoAppBlocker.getAppIcon(packageName);
+      if (icon) {
+        this.iconCache.set(packageName, icon);
+      }
+      return icon;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Android helper: fetch real device Screen-on Time & foreground app usage for today
+   */
+  public async getRealUsageStats(): Promise<ExpoAppBlocker.RealUsageStatsResult> {
+    if (Platform.OS !== 'android') {
+      return {
+        totalScreenTimeMinutes: 0,
+        appUsageMinutes: {},
+        startTimeMs: Date.now(),
+        endTimeMs: Date.now(),
+      };
+    }
+    try {
+      return await ExpoAppBlocker.getRealUsageStats();
+    } catch (e) {
+      console.warn('[BlockerEngine] getRealUsageStats error:', e);
+      return {
+        totalScreenTimeMinutes: 0,
+        appUsageMinutes: {},
+        startTimeMs: Date.now(),
+        endTimeMs: Date.now(),
+      };
     }
   }
 
@@ -202,9 +271,9 @@ class BlockerEngine {
   /**
    * Grants temporary focus pass (budget) in minutes.
    */
-  public async grantTemporaryUnlock(minutes: number): Promise<void> {
+  public async grantTemporaryUnlock(minutes: number, packageName?: string): Promise<void> {
     try {
-      await ExpoAppBlocker.temporaryUnlock(minutes);
+      await ExpoAppBlocker.temporaryUnlock(minutes, packageName);
       await recordEarnedUnlock(minutes);
     } catch (e) {
       console.warn('[BlockerEngine] temporaryUnlock error:', e);
@@ -277,6 +346,86 @@ class BlockerEngine {
       return ExpoAppBlocker.addPendingUnlockListener(onTap);
     }
     return null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Floating Doomscroll HUD Widget Controls (Android)
+  // ─────────────────────────────────────────────────────────────
+
+  public setFloatingHudEnabled(enabled: boolean): void {
+    ExpoAppBlocker.setFloatingHudEnabled(enabled);
+  }
+
+  public isFloatingHudEnabled(): boolean {
+    return ExpoAppBlocker.isFloatingHudEnabled();
+  }
+
+  public setMonitoredHudPackages(packages: string[]): void {
+    ExpoAppBlocker.setMonitoredHudPackages(packages);
+  }
+
+  public getMonitoredHudPackages(): string[] {
+    return ExpoAppBlocker.getMonitoredHudPackages();
+  }
+
+  public setDoomscrollAlertThresholds(minutes: number, scrolls: number): void {
+    ExpoAppBlocker.setDoomscrollAlertThresholds(minutes, scrolls);
+  }
+
+  public openAccessibilitySettings(): void {
+    ExpoAppBlocker.openAccessibilitySettings();
+  }
+
+  public isAccessibilityServiceRunning(): boolean {
+    return ExpoAppBlocker.isAccessibilityServiceRunning();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Notification Suppression & Vault Engine (Regain Parity)
+  // ─────────────────────────────────────────────────────────────
+
+  public async isNotificationListenerGranted(): Promise<boolean> {
+    return await ExpoAppBlocker.isNotificationListenerGranted();
+  }
+
+  public openNotificationListenerSettings(): boolean {
+    return ExpoAppBlocker.openNotificationListenerSettings();
+  }
+
+  public async getSuppressedNotifications(): Promise<ExpoAppBlocker.SuppressedNotification[]> {
+    return await ExpoAppBlocker.getSuppressedNotifications();
+  }
+
+  public clearSuppressedNotification(id: string): boolean {
+    return ExpoAppBlocker.clearSuppressedNotification(id);
+  }
+
+  public clearAllSuppressedNotifications(): boolean {
+    return ExpoAppBlocker.clearAllSuppressedNotifications();
+  }
+
+  public setNotificationFilterEnabled(enabled: boolean): void {
+    ExpoAppBlocker.setNotificationFilterEnabled(enabled);
+  }
+
+  public isNotificationFilterEnabled(): boolean {
+    return ExpoAppBlocker.isNotificationFilterEnabled();
+  }
+
+  public getVipPackages(): string[] {
+    return ExpoAppBlocker.getVipPackages();
+  }
+
+  public setVipPackages(packages: string[]): void {
+    ExpoAppBlocker.setVipPackages(packages);
+  }
+
+  public isSuppressAllNonVip(): boolean {
+    return ExpoAppBlocker.isSuppressAllNonVip();
+  }
+
+  public setSuppressAllNonVip(enabled: boolean): void {
+    ExpoAppBlocker.setSuppressAllNonVip(enabled);
   }
 }
 

@@ -1,0 +1,220 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  SafeAreaView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { PatternLock } from './pattern-lock';
+
+interface PatternSetupModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSave: (pattern: number[]) => void;
+}
+
+export function PatternSetupModal({
+  visible,
+  onClose,
+  onSave,
+}: PatternSetupModalProps) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [firstPattern, setFirstPattern] = useState<number[] | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleClose = () => {
+    setStep(1);
+    setFirstPattern(null);
+    setErrorMsg('');
+    onClose();
+  };
+
+  const handleFirstRecorded = (pattern: number[]) => {
+    if (pattern.length < 4) {
+      setErrorMsg('At least 4 dots required');
+      return;
+    }
+    setErrorMsg('');
+    setFirstPattern(pattern);
+    setStep(2);
+  };
+
+  const handleConfirmRecorded = (confirmPattern: number[]) => {
+    if (!firstPattern) {
+      setStep(1);
+      return;
+    }
+
+    const isMatch =
+      confirmPattern.length === firstPattern.length &&
+      confirmPattern.every((v, i) => v === firstPattern[i]);
+
+    if (isMatch) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onSave(confirmPattern);
+      handleClose();
+    } else {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setErrorMsg('Patterns did not match. Draw from the beginning.');
+      setTimeout(() => {
+        setStep(1);
+        setFirstPattern(null);
+        setErrorMsg('');
+      }, 900);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          {/* Top Bar */}
+          <View style={styles.topBar}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+              <Ionicons name="close" size={24} color="#94A3B8" />
+            </TouchableOpacity>
+            <Text style={styles.topBarTitle}>
+              {step === 1 ? 'Step 1 of 2: Create Pattern' : 'Step 2 of 2: Confirm Pattern'}
+            </Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Stepper Progress Indicator */}
+          <View style={styles.stepIndicator}>
+            <View style={[styles.stepBar, step >= 1 && styles.stepBarActive]} />
+            <View style={[styles.stepBar, step >= 2 && styles.stepBarActive]} />
+          </View>
+
+          {errorMsg ? (
+            <Text style={styles.errorBanner}>{errorMsg}</Text>
+          ) : (
+            <View style={{ height: 22 }} />
+          )}
+
+          {/* Pattern Lock Canvas in Setup Mode */}
+          <View style={styles.canvasWrapper}>
+            {step === 1 ? (
+              <PatternLock
+                isSetupMode={true}
+                onSuccess={() => {}}
+                onPatternRecorded={handleFirstRecorded}
+                title="Draw Your Pattern"
+                subtitle="Connect at least 4 dots. Remember this pattern."
+              />
+            ) : (
+              <PatternLock
+                isSetupMode={true}
+                onSuccess={() => {}}
+                onPatternRecorded={handleConfirmRecorded}
+                title="Confirm Your Pattern"
+                subtitle="Draw the same pattern again to confirm."
+              />
+            )}
+          </View>
+
+          {/* Bottom helper */}
+          <View style={styles.footer}>
+            {step === 2 && (
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => {
+                  setStep(1);
+                  setFirstPattern(null);
+                  setErrorMsg('');
+                }}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#94A3B8" />
+                <Text style={styles.retryBtnText}>Start Over</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#070A11',
+  },
+  container: {
+    flex: 1,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 24,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingVertical: 12,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+    paddingHorizontal: 16,
+    marginVertical: 8,
+  },
+  stepBar: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(51, 65, 85, 0.6)',
+  },
+  stepBarActive: {
+    backgroundColor: '#00E699',
+  },
+  errorBanner: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  canvasWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  footer: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+  },
+  retryBtnText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});

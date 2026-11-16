@@ -182,6 +182,147 @@ export default function ChallengesScreen() {
           </Text>
         </TouchableOpacity>
 
+        {/* Gate Option 4: Chess Tactics */}
+        <TouchableOpacity
+          style={[
+            styles.gateCard,
+            settings.activeChallenge === 'chess' && styles.gateCardSelected,
+          ]}
+          onPress={() => handleSelectGate('chess')}
+        >
+          <View style={styles.cardTop}>
+            <View
+              style={[
+                styles.iconBox,
+                settings.activeChallenge === 'chess' && styles.iconBoxSelected,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="chess-knight"
+                size={26}
+                color={
+                  settings.activeChallenge === 'chess'
+                    ? '#38BDF8'
+                    : NinjaPalette.textSecondary
+                }
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.gateTitle}>Chess Tactics Gate</Text>
+              <Text style={styles.gateSub}>
+                Solve 1 Tactical Mate-in-1 or Mate-in-2 Puzzle
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.checkCircle,
+                settings.activeChallenge === 'chess' && styles.checkCircleSelected,
+              ]}
+            >
+              {settings.activeChallenge === 'chess' && (
+                <MaterialCommunityIcons name="check" size={14} color="#070A11" />
+              )}
+            </View>
+          </View>
+          <Text style={styles.gateDesc}>
+            Requires strategic forward-thinking and pattern recognition, completely dislodging impulse screen addiction.
+          </Text>
+        </TouchableOpacity>
+
+        {/* Gate Option 5: Matiks Speed Sprint */}
+        <TouchableOpacity
+          style={[
+            styles.gateCard,
+            settings.activeChallenge === 'matiks' && styles.gateCardSelected,
+          ]}
+          onPress={() => handleSelectGate('matiks')}
+        >
+          <View style={styles.cardTop}>
+            <View
+              style={[
+                styles.iconBox,
+                settings.activeChallenge === 'matiks' && styles.iconBoxSelected,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="calculator-variant"
+                size={26}
+                color={
+                  settings.activeChallenge === 'matiks'
+                    ? '#00E699'
+                    : NinjaPalette.textSecondary
+                }
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.gateTitle}>Matiks Speed Sprint</Text>
+              <Text style={styles.gateSub}>
+                45s Rapid Arithmetic vs Sensei Rival Bot
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.checkCircle,
+                settings.activeChallenge === 'matiks' && styles.checkCircleSelected,
+              ]}
+            >
+              {settings.activeChallenge === 'matiks' && (
+                <MaterialCommunityIcons name="check" size={14} color="#070A11" />
+              )}
+            </View>
+          </View>
+          <Text style={styles.gateDesc}>
+            High-speed mental math with combo streaks and bot racing that sparks intense prefrontal focus.
+          </Text>
+        </TouchableOpacity>
+
+        {/* Gate Option 6: Schulte Matrix */}
+        <TouchableOpacity
+          style={[
+            styles.gateCard,
+            settings.activeChallenge === 'schulte' && styles.gateCardSelected,
+          ]}
+          onPress={() => handleSelectGate('schulte')}
+        >
+          <View style={styles.cardTop}>
+            <View
+              style={[
+                styles.iconBox,
+                settings.activeChallenge === 'schulte' && styles.iconBoxSelected,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="target"
+                size={26}
+                color={
+                  settings.activeChallenge === 'schulte'
+                    ? '#EC4899'
+                    : NinjaPalette.textSecondary
+                }
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.gateTitle}>Schulte Focus Matrix</Text>
+              <Text style={styles.gateSub}>
+                4×4 Peripheral Vision Number Search
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.checkCircle,
+                settings.activeChallenge === 'schulte' && styles.checkCircleSelected,
+              ]}
+            >
+              {settings.activeChallenge === 'schulte' && (
+                <MaterialCommunityIcons name="check" size={14} color="#070A11" />
+              )}
+            </View>
+          </View>
+          <Text style={styles.gateDesc}>
+            Soviet cosmonaut focus matrix: tap numbers 1 to 16 in order as fast as possible.
+          </Text>
+        </TouchableOpacity>
+
         {/* Focus Pass Duration Setting */}
         <View style={styles.configSection}>
           <Text style={styles.sectionHeading}>EARNED FOCUS PASS DURATION</Text>

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,13 +9,17 @@ interface ScramblePinProps {
   onSuccess: () => void;
   onFailure?: (attempts: number) => void;
   onCancel?: () => void;
+  onPinRecorded?: (pin: string) => void;
+  isSetupMode?: boolean;
   title?: string;
   subtitle?: string;
   allowBiometrics?: boolean;
+  autoPromptBiometrics?: boolean;
+  isScramble?: boolean;
 }
 
 function generateScrambledKeypad(): string[] {
-  const nums = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+  const nums = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
   for (let i = nums.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [nums[i], nums[j]] = [nums[j], nums[i]];
@@ -23,51 +27,79 @@ function generateScrambledKeypad(): string[] {
   return nums;
 }
 
+const STANDARD_KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+
 export function ScramblePin({
   correctPin = '1234',
   onSuccess,
   onFailure,
   onCancel,
+  onPinRecorded,
+  isSetupMode = false,
   title = 'Master Shield PIN',
-  subtitle = 'Numbers are randomized to prevent smudge detection',
+  subtitle = 'Enter 4-digit PIN to authenticate',
   allowBiometrics = true,
+  autoPromptBiometrics = false,
+  isScramble = false,
 }: ScramblePinProps) {
   const [digits, setDigits] = useState<string[]>([]);
-  const [keypad, setKeypad] = useState<string[]>(() => generateScrambledKeypad());
+  const [keypad, setKeypad] = useState<string[]>(() =>
+    isScramble ? generateScrambledKeypad() : STANDARD_KEYPAD
+  );
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [shakeAnim] = useState(() => new Animated.Value(0));
 
-  useEffect(() => {
-    let isMounted = true;
-    if (allowBiometrics) {
-      void LocalAuthentication.hasHardwareAsync().then((compatible) => {
-        if (!compatible || !isMounted) return;
-        void LocalAuthentication.isEnrolledAsync().then((enrolled) => {
-          if (isMounted) setBiometricAvailable(enrolled);
-        });
-      });
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [allowBiometrics]);
+  const triggerShake = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 12, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -12, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  }, [shakeAnim]);
 
-  const handleBiometricAuth = async () => {
+  const handleBiometricAuth = useCallback(async () => {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const res = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Authenticate with NeuroNinja Biometrics',
+        promptMessage: 'Authenticate with Fingerprint',
         fallbackLabel: 'Use PIN',
+        cancelLabel: 'Cancel',
       });
       if (res.success) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onSuccess();
       }
     } catch {
-      // Fallback to PIN
+      // User canceled or fallback
     }
-  };
+  }, [onSuccess]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (allowBiometrics && !isSetupMode) {
+      void LocalAuthentication.hasHardwareAsync().then((compatible) => {
+        if (!compatible || !isMounted) return;
+        void LocalAuthentication.isEnrolledAsync().then((enrolled) => {
+          if (isMounted) {
+            setBiometricAvailable(enrolled);
+            if (enrolled && autoPromptBiometrics) {
+              // Auto-prompt biometrics shortly after screen settles
+              setTimeout(() => {
+                if (isMounted) void handleBiometricAuth();
+              }, 300);
+            }
+          }
+        });
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [allowBiometrics, autoPromptBiometrics, handleBiometricAuth, isSetupMode]);
 
   const handleKeyPress = async (val: string) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -78,6 +110,14 @@ export function ScramblePin({
 
       if (next.length === 4) {
         const entered = next.join('');
+
+        if (isSetupMode && onPinRecorded) {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          onPinRecorded(entered);
+          setDigits([]);
+          return;
+        }
+
         if (entered === correctPin) {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           onSuccess();
@@ -85,10 +125,17 @@ export function ScramblePin({
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           const newFail = failedAttempts + 1;
           setFailedAttempts(newFail);
-          setErrorMsg(newFail >= 3 ? `Intruder Alert: ${newFail} failed attempts recorded` : 'Invalid PIN. Keys rescrambled.');
+          setErrorMsg(
+            newFail >= 3
+              ? `Intruder Alert: ${newFail} failed attempts recorded`
+              : 'Invalid PIN. Try again.'
+          );
+          triggerShake();
           onFailure?.(newFail);
           setDigits([]);
-          setKeypad(generateScrambledKeypad());
+          if (isScramble) {
+            setKeypad(generateScrambledKeypad());
+          }
         }
       }
     }
@@ -105,14 +152,19 @@ export function ScramblePin({
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.shieldIconWrapper}>
-          <Ionicons name="keypad-outline" size={32} color="#00E699" />
+          <Ionicons name="keypad" size={28} color="#00E699" />
         </View>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
       </View>
 
-      {/* PIN Dots */}
-      <View style={styles.dotsRow}>
+      {/* PIN Dots Row */}
+      <Animated.View
+        style={[
+          styles.dotsRow,
+          { transform: [{ translateX: shakeAnim }] },
+        ]}
+      >
         {[0, 1, 2, 3].map((idx) => (
           <View
             key={idx}
@@ -123,11 +175,15 @@ export function ScramblePin({
             ]}
           />
         ))}
-      </View>
+      </Animated.View>
 
-      {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : <View style={{ height: 20 }} />}
+      {errorMsg ? (
+        <Text style={styles.errorText}>{errorMsg}</Text>
+      ) : (
+        <View style={{ height: 18 }} />
+      )}
 
-      {/* Scrambled Dial Pad */}
+      {/* Numeric Keypad Grid */}
       <View style={styles.keypadGrid}>
         {keypad.slice(0, 9).map((key) => (
           <TouchableOpacity
@@ -141,9 +197,13 @@ export function ScramblePin({
         ))}
 
         {/* Bottom Row */}
-        {biometricAvailable ? (
-          <TouchableOpacity style={styles.keyButton} onPress={() => void handleBiometricAuth()} activeOpacity={0.7}>
-            <Ionicons name="finger-print" size={28} color="#00E699" />
+        {biometricAvailable && !isSetupMode ? (
+          <TouchableOpacity
+            style={[styles.keyButton, styles.biometricKeyButton]}
+            onPress={() => void handleBiometricAuth()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="finger-print" size={26} color="#00E699" />
           </TouchableOpacity>
         ) : (
           <View style={styles.keyButtonPlaceholder} />
@@ -159,14 +219,19 @@ export function ScramblePin({
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.keyButton} onPress={() => void handleDelete()} activeOpacity={0.7}>
-          <Ionicons name="backspace-outline" size={26} color="#94A3B8" />
+        <TouchableOpacity
+          style={styles.keyButton}
+          onPress={() => void handleDelete()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="backspace-outline" size={24} color="#94A3B8" />
         </TouchableOpacity>
       </View>
 
       {onCancel && (
-        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-          <Text style={styles.cancelText}>Return to Safety</Text>
+        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={16} color="#94A3B8" />
+          <Text style={styles.cancelText}>Back to Options</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -175,102 +240,112 @@ export function ScramblePin({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   shieldIconWrapper: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#0F291E',
-    borderWidth: 1,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#071610',
+    borderWidth: 1.5,
     borderColor: '#00E699',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   title: {
     fontSize: 22,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   subtitle: {
     fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
+    color: '#94A3B8',
     marginTop: 4,
-    maxWidth: 260,
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
   dotsRow: {
     flexDirection: 'row',
     gap: 16,
-    marginVertical: 16,
+    marginVertical: 14,
   },
   dot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     borderWidth: 1.5,
-    borderColor: '#334155',
+    borderColor: '#475569',
     backgroundColor: 'transparent',
   },
   dotFilled: {
     backgroundColor: '#00E699',
     borderColor: '#00E699',
+    transform: [{ scale: 1.15 }],
   },
   dotError: {
-    borderColor: '#EF4444',
     backgroundColor: '#EF4444',
+    borderColor: '#EF4444',
   },
   errorText: {
-    fontSize: 12,
     color: '#EF4444',
-    fontWeight: '600',
-    marginBottom: 10,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
     textAlign: 'center',
   },
   keypadGrid: {
+    width: 270,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    width: 270,
     justifyContent: 'space-between',
-    gap: 16,
-    marginTop: 10,
+    gap: 14,
+    marginTop: 4,
   },
   keyButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#1E293B',
+    width: 76,
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: 'rgba(30, 41, 59, 0.75)',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'rgba(51, 65, 85, 0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  biometricKeyButton: {
+    backgroundColor: 'rgba(0, 230, 153, 0.1)',
+    borderColor: 'rgba(0, 230, 153, 0.4)',
+  },
   keyButtonPlaceholder: {
-    width: 72,
-    height: 72,
+    width: 76,
+    height: 60,
   },
   keyText: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#FFFFFF',
   },
   cancelBtn: {
-    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 18,
     paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
   },
   cancelText: {
     color: '#94A3B8',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
 });

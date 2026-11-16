@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  Alert,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,9 +13,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import { useNinjaAlert } from '../../context/ninja-alert-context';
 
 export default function FamilySafetyScreen() {
   const router = useRouter();
+  const { showToast } = useNinjaAlert();
   const [isParentMode, setIsParentMode] = useState(true);
   const [bedtimeCurfew, setBedtimeCurfew] = useState(true);
   const [safeSearch, setSafeSearch] = useState(true);
@@ -72,7 +73,12 @@ export default function FamilySafetyScreen() {
 
   const handleGrantExtension = async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Allowance Granted', 'Granted +15 minutes temporary focus pass to paired device.');
+    showToast({
+      title: 'Allowance Granted',
+      message: 'Granted +15 minutes temporary focus pass to paired device.',
+      type: 'success',
+      icon: 'clock-check-outline',
+    });
   };
 
   return (

@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  loadActiveMissionProgress,
+  saveActiveMissionProgress,
+} from '../../services/alarms/alarm-engine';
 
 interface MathMissionProps {
+  alarmId?: string;
   difficulty?: 'easy' | 'medium' | 'hard';
+  questionCount?: number;
   onCompleted: () => void;
 }
 
@@ -14,32 +20,49 @@ interface MathProblem {
 }
 
 function generateProblem(difficulty: 'easy' | 'medium' | 'hard'): MathProblem {
-  let a = 12;
-  let b = 7;
-  let c = 5;
   if (difficulty === 'easy') {
-    a = Math.floor(Math.random() * 20) + 5;
-    b = Math.floor(Math.random() * 15) + 3;
+    const a = Math.floor(Math.random() * 20) + 5;
+    const b = Math.floor(Math.random() * 15) + 3;
     return { question: `${a} + ${b}`, answer: a + b };
-  } else if (difficulty === 'medium') {
-    a = Math.floor(Math.random() * 12) + 4;
-    b = Math.floor(Math.random() * 9) + 3;
-    c = Math.floor(Math.random() * 20) + 10;
-    return { question: `(${a} × ${b}) + ${c}`, answer: a * b + c };
-  } else {
-    a = Math.floor(Math.random() * 25) + 10;
-    b = Math.floor(Math.random() * 15) + 5;
-    c = Math.floor(Math.random() * 30) + 10;
-    return { question: `(${a} × ${b}) - ${c}`, answer: a * b - c };
   }
+  if (difficulty === 'medium') {
+    const a = Math.floor(Math.random() * 12) + 4;
+    const b = Math.floor(Math.random() * 9) + 3;
+    const c = Math.floor(Math.random() * 20) + 10;
+    return { question: `(${a} × ${b}) + ${c}`, answer: a * b + c };
+  }
+  const a = Math.floor(Math.random() * 22) + 12;
+  const b = Math.floor(Math.random() * 12) + 5;
+  const c = Math.floor(Math.random() * 30) + 10;
+  return { question: `(${a} × ${b}) - ${c}`, answer: a * b - c };
 }
 
-export function MathMission({ difficulty = 'medium', onCompleted }: MathMissionProps) {
+export function MathMission({
+  alarmId,
+  difficulty = 'medium',
+  questionCount = 3,
+  onCompleted,
+}: MathMissionProps) {
+  const totalProblems = Math.max(1, Math.min(5, questionCount));
   const [problemIndex, setProblemIndex] = useState(0);
   const [currentProblem, setCurrentProblem] = useState<MathProblem>(() => generateProblem(difficulty));
   const [inputVal, setInputVal] = useState('');
   const [errorText, setErrorText] = useState('');
-  const totalProblems = 3;
+
+  useEffect(() => {
+    if (!alarmId) return;
+    let mounted = true;
+    void loadActiveMissionProgress(alarmId, 'math').then((saved) => {
+      if (!mounted || !saved) return;
+      if (typeof saved.problemIndex === 'number' && saved.currentProblem) {
+        setProblemIndex(Math.min(totalProblems - 1, saved.problemIndex));
+        setCurrentProblem(saved.currentProblem as MathProblem);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [alarmId, totalProblems]);
 
   const handleNumPress = async (num: string) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -60,9 +83,16 @@ export function MathMission({ difficulty = 'medium', onCompleted }: MathMissionP
       if (nextIndex >= totalProblems) {
         onCompleted();
       } else {
+        const nextProblem = generateProblem(difficulty);
         setProblemIndex(nextIndex);
-        setCurrentProblem(generateProblem(difficulty));
+        setCurrentProblem(nextProblem);
         setInputVal('');
+        if (alarmId) {
+          void saveActiveMissionProgress(alarmId, 'math', {
+            problemIndex: nextIndex,
+            currentProblem: nextProblem,
+          });
+        }
       }
     } else {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -76,7 +106,7 @@ export function MathMission({ difficulty = 'medium', onCompleted }: MathMissionP
       <View style={styles.badge}>
         <Ionicons name="calculator-outline" size={16} color="#00E699" />
         <Text style={styles.badgeText}>
-          Problem {problemIndex + 1} of {totalProblems}
+          Problem {problemIndex + 1} of {totalProblems} · {difficulty.toUpperCase()}
         </Text>
       </View>
 
@@ -88,7 +118,6 @@ export function MathMission({ difficulty = 'medium', onCompleted }: MathMissionP
 
       {errorText ? <Text style={styles.errorText}>{errorText}</Text> : <View style={{ height: 20 }} />}
 
-      {/* Keypad */}
       <View style={styles.keypad}>
         {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '✓'].map((key) => (
           <TouchableOpacity
@@ -121,11 +150,7 @@ export function MathMission({ difficulty = 'medium', onCompleted }: MathMissionP
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    padding: 20,
-    width: '100%',
-  },
+  container: { alignItems: 'center', padding: 16, width: '100%' },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -136,51 +161,33 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#00E699',
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  badgeText: {
-    fontSize: 12,
-    color: '#00E699',
-    fontWeight: '700',
-  },
-  questionText: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 16,
-  },
+  badgeText: { fontSize: 12, color: '#00E699', fontWeight: '700' },
+  questionText: { fontSize: 30, fontWeight: '900', color: '#FFFFFF', marginBottom: 14 },
   inputBox: {
     width: 200,
-    height: 54,
+    height: 52,
     borderRadius: 14,
     backgroundColor: '#1E293B',
     borderWidth: 1.5,
     borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  inputText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#00E699',
-  },
-  errorText: {
-    color: '#EF4444',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
+  inputText: { fontSize: 26, fontWeight: '800', color: '#00E699' },
+  errorText: { color: '#EF4444', fontSize: 12, fontWeight: '600', marginBottom: 8 },
   keypad: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    width: 260,
+    width: 256,
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   key: {
-    width: 72,
-    height: 60,
+    width: 74,
+    height: 56,
     borderRadius: 16,
     backgroundColor: '#1E293B',
     borderWidth: 1,
@@ -188,24 +195,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keySubmit: {
-    backgroundColor: '#00E699',
-    borderColor: '#00E699',
-  },
-  keyClear: {
-    backgroundColor: '#334155',
-  },
-  keyText: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  keyTextSubmit: {
-    color: '#070A11',
-    fontWeight: '900',
-  },
-  keyTextClear: {
-    color: '#94A3B8',
-  },
+  keySubmit: { backgroundColor: '#00E699', borderColor: '#00E699' },
+  keyClear: { backgroundColor: '#334155' },
+  keyText: { fontSize: 21, fontWeight: '700', color: '#F8FAFC' },
+  keyTextSubmit: { color: '#070A11', fontWeight: '900' },
+  keyTextClear: { color: '#94A3B8' },
 });
-

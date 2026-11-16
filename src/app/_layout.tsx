@@ -1,12 +1,24 @@
 import { DarkTheme, ThemeProvider, Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { NinjaProvider } from '../context/ninja-context';
+import { NinjaAlertProvider } from '../context/ninja-alert-context';
 import { blockerEngine } from '../services/blocker/blocker-engine';
 
 SplashScreen.preventAutoHideAsync();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 function RootNavigator() {
   const router = useRouter();
@@ -14,16 +26,32 @@ function RootNavigator() {
   useEffect(() => {
     SplashScreen.hideAsync();
 
-    if (blockerEngine.checkAndClearPendingUnlock()) {
+    if (Platform.OS === 'ios' && blockerEngine.checkAndClearPendingUnlock()) {
       router.push('/blocked?reason=opened' as any);
     }
 
-    const sub = blockerEngine.addPendingUnlockListener(() => {
+    const sub = Platform.OS === 'ios' ? blockerEngine.addPendingUnlockListener(() => {
       router.push('/blocked?reason=opened' as any);
+    }) : null;
+
+    const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string | undefined>;
+      if (data?.type === 'alarm' && data.alarmId) {
+        router.push(
+          `/alarms/ring?alarmId=${encodeURIComponent(data.alarmId)}&mission=${data.mission ?? 'math'}` as any
+        );
+      } else if (data?.type === 'task_reminder' && data.taskId) {
+        router.push(`/lifeos/tasks/detail?id=${data.taskId}` as any);
+      } else if (data?.type === 'routine_start' && data.routineId) {
+        router.push(`/lifeos/routines/player?routineId=${data.routineId}` as any);
+      } else if (data?.type === 'bedtime_winddown') {
+        router.push('/lifeos/sleep' as any);
+      }
     });
 
     return () => {
       sub?.remove();
+      notifSub.remove();
     };
   }, [router]);
 
@@ -61,7 +89,9 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <NinjaProvider>
-      <RootNavigator />
+      <NinjaAlertProvider>
+        <RootNavigator />
+      </NinjaAlertProvider>
     </NinjaProvider>
   );
 }

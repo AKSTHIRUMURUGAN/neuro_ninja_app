@@ -1,9 +1,42 @@
-import { Tabs } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Tabs, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { BackHandler, Platform } from 'react-native';
 import { NinjaPalette } from '../../constants/theme';
+import { useNinja } from '../../context/ninja-context';
+import { checkLauncherStatus } from '../../services/launcher/launcher-service';
 
 export default function TabLayout() {
+  const router = useRouter();
+  const { settings } = useNinja();
+  const [isDefaultHome, setIsDefaultHome] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void checkLauncherStatus().then((status) => {
+      if (mounted) setIsDefaultHome(status.isDefault);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (settings.ghostLauncherAsHome || isDefaultHome) {
+        if (!router.canGoBack()) {
+          router.replace('/focus/ghost-launcher' as any);
+          return true;
+        }
+      }
+      return false;
+    });
+
+    return () => backSub.remove();
+  }, [settings.ghostLauncherAsHome, isDefaultHome, router]);
+
   return (
     <Tabs
       screenOptions={{
@@ -56,6 +89,19 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons
               name="brain"
+              size={size}
+              color={typeof color === 'string' ? color : NinjaPalette.textMuted}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="lifeos"
+        options={{
+          title: 'LifeOS',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons
+              name="calendar-check-outline"
               size={size}
               color={typeof color === 'string' ? color : NinjaPalette.textMuted}
             />

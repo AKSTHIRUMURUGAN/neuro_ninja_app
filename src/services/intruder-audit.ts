@@ -6,7 +6,7 @@ export interface IntruderLogEntry {
   targetPackage: string;
   appName: string;
   failedCount: number;
-  triggerType: 'pin' | 'biometric' | 'breach';
+  triggerType: 'pin' | 'pattern' | 'biometric' | 'breach';
 }
 
 const INTRUDER_STORAGE_KEY = '@neuroninja_intruder_logs_v1';
@@ -15,7 +15,7 @@ export async function logIntruderAttempt(
   targetPackage: string,
   appName: string,
   failedCount: number,
-  triggerType: 'pin' | 'biometric' | 'breach' = 'pin'
+  triggerType: 'pin' | 'pattern' | 'biometric' | 'breach' = 'pin'
 ): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(INTRUDER_STORAGE_KEY);

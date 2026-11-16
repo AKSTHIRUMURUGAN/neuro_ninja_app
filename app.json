@@ -24,15 +24,21 @@
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundImage": "./assets/images/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "PACKAGE_USAGE_STATS",
         "SYSTEM_ALERT_WINDOW",
         "FOREGROUND_SERVICE",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_FULL_SCREEN_INTENT",
+        "WAKE_LOCK",
+        "CAMERA",
+        "ACTIVITY_RECOGNITION",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
       ]
     },
     "web": {
@@ -41,6 +47,33 @@
     },
     "plugins": [
       "expo-router",
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification_icon.png",
+          "color": "#00E699"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow NeuroNinja to use the camera only when QR/barcode or location photo alarm missions are configured."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow NeuroNinja to use motion sensors when shake or step alarm missions are active."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow NeuroNinja to view your calendar only after you connect an external calendar."
+        }
+      ],
+      "expo-audio",
       [
         "expo-splash-screen",
         {
@@ -78,7 +111,8 @@
             "notificationText": "Monitoring distraction barriers."
           }
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "eas": {

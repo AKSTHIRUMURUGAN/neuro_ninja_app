@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useNinjaAlert } from '../context/ninja-alert-context';
 
 interface VaultItem {
   id: string;
@@ -22,6 +22,7 @@ interface VaultItem {
 const VAULT_STORAGE_KEY = '@neuroninja_privacy_vault_v1';
 
 export function PrivacyVault({ onClose }: { onClose: () => void }) {
+  const { showToast } = useNinjaAlert();
   const [items, setItems] = useState<VaultItem[]>([]);
   const [newTitle, setNewTitle] = useState('');
   const [newSecret, setNewSecret] = useState('');
@@ -36,7 +37,12 @@ export function PrivacyVault({ onClose }: { onClose: () => void }) {
 
   const handleAddItem = async () => {
     if (!newTitle.trim() || !newSecret.trim()) {
-      Alert.alert('Required Fields', 'Please enter both title and secret data.');
+      showToast({
+        title: 'Required Fields',
+        message: 'Please enter both title and secret data.',
+        type: 'warning',
+        icon: 'alert-outline',
+      });
       return;
     }
 

@@ -10,18 +10,6 @@ export function DoomscrollCard() {
   useEffect(() => {
     void (async () => {
       const dayReport = await doomscrollEngine.getDayReport();
-      // If fresh install, show rich representative baseline data so user can experience full UX
-      if (dayReport.totalScrollMinutes === 0 && dayReport.doomscrollSessionsCount === 0) {
-        dayReport.totalScrollMinutes = 84;
-        dayReport.doomscrollSessionsCount = 14;
-        dayReport.excessiveSessionsCount = 3;
-        dayReport.rapidReopensCount = 7;
-        dayReport.lateNightSessionsCount = 4;
-        dayReport.scrollDebtMinutes = 24;
-        dayReport.hourlyHeatmap = [
-          0, 0, 0, 0, 0, 0, 5, 12, 8, 15, 6, 10, 14, 8, 12, 16, 20, 15, 25, 30, 22, 18, 12, 8,
-        ];
-      }
       setReport(dayReport);
     })();
   }, []);

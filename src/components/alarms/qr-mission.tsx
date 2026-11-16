@@ -1,75 +1,133 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { hashMissionCode } from '../../services/alarms/alarm-engine';
 
 interface QRMissionProps {
+  mode?: 'setup' | 'verify';
+  expectedHash?: string;
+  expectedLabel?: string;
   onCompleted: () => void;
+  onCodeRegistered?: (hash: string, rawLabel: string) => void;
+  onFallbackRequested?: () => void;
 }
 
-export function QRMission({ onCompleted }: QRMissionProps) {
-  const [isScanning, setIsScanning] = useState(false);
+export function QRMission({
+  mode = 'verify',
+  expectedHash,
+  expectedLabel,
+  onCompleted,
+  onCodeRegistered,
+  onFallbackRequested,
+}: QRMissionProps) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [statusMessage, setStatusMessage] = useState(
+    mode === 'setup'
+      ? 'Scan any QR/barcode in your kitchen or bathroom to register it.'
+      : expectedLabel
+        ? `Scan your registered "${expectedLabel}" code to silence.`
+        : 'Scan your registered QR or barcode to dismiss.'
+  );
 
-  const handleSimulateScan = async () => {
-    setIsScanning(true);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setTimeout(async () => {
-      setIsScanning(false);
+  const handleBarcodeScanned = async ({ data }: { type: string; data: string }) => {
+    if (scanned) return;
+    setScanned(true);
+    const scannedHash = hashMissionCode(data);
+
+    if (mode === 'setup') {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('QR Code Verified!', 'Bathroom Sentinel Station scanned. Alarm successfully silenced!');
+      const previewLabel = data.length > 24 ? `${data.slice(0, 24)}...` : data;
+      onCodeRegistered?.(scannedHash, previewLabel);
+      setStatusMessage(`Registered code (${scannedHash.slice(0, 6)}).`);
       onCompleted();
-    }, 1500);
+      return;
+    }
+
+    if (!expectedHash || scannedHash === expectedHash) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onCompleted();
+    } else {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setStatusMessage('Wrong QR/barcode! Scan the registered code.');
+      setTimeout(() => setScanned(false), 1200);
+    }
   };
+
+  if (!permission) {
+    return (
+      <View style={styles.centerBox}>
+        <Text style={styles.subtitle}>Checking camera availability...</Text>
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.centerBox}>
+        <Ionicons name="camera-outline" size={48} color="#94A3B8" />
+        <Text style={styles.title}>Camera Access Needed</Text>
+        <Text style={styles.subtitle}>
+          QR/Barcode missions scan a real household code to verify you got out of bed.
+        </Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => void requestPermission()}>
+          <Text style={styles.primaryBtnText}>Enable Camera</Text>
+        </TouchableOpacity>
+        {onFallbackRequested && (
+          <TouchableOpacity style={styles.secondaryBtn} onPress={onFallbackRequested}>
+            <Text style={styles.secondaryBtnText}>Switch to Math Fallback</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.badge}>
         <Ionicons name="qr-code-outline" size={16} color="#00E699" />
-        <Text style={styles.badgeText}>QR Station Mission</Text>
+        <Text style={styles.badgeText}>
+          {mode === 'setup' ? 'Register QR / Barcode' : 'QR Wakeup Verification'}
+        </Text>
       </View>
 
-      <Text style={styles.title}>Scan Wakeup Station</Text>
-      <Text style={styles.subtitle}>
-        Get out of bed and scan your designated QR code (placed in bathroom or kitchen) to silence.
-      </Text>
+      <Text style={styles.subtitle}>{statusMessage}</Text>
 
-      {/* QR Scanner Viewfinder Simulation */}
-      <View style={styles.viewfinder}>
-        <View style={styles.cornerTL} />
-        <View style={styles.cornerTR} />
-        <View style={styles.cornerBL} />
-        <View style={styles.cornerBR} />
-        <Ionicons
-          name={isScanning ? 'barcode-outline' : 'qr-code-outline'}
-          size={84}
-          color={isScanning ? '#00E699' : '#64748B'}
+      <View style={styles.cameraFrame}>
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          enableTorch={torch}
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'upc_a'],
+          }}
+          onBarcodeScanned={scanned ? undefined : (res) => void handleBarcodeScanned(res)}
         />
-        <Text style={styles.scanningText}>
-          {isScanning ? 'Verifying QR Code...' : 'Aim at Room Station'}
-        </Text>
+        <View style={styles.reticle} />
       </View>
 
-      <TouchableOpacity
-        style={[styles.scanBtn, isScanning && styles.scanBtnActive]}
-        onPress={() => void handleSimulateScan()}
-        disabled={isScanning}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="scan-outline" size={20} color="#070A11" />
-        <Text style={styles.scanBtnText}>
-          {isScanning ? 'Processing...' : 'Scan Station QR Code'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.controlsRow}>
+        <TouchableOpacity style={styles.controlPill} onPress={() => setTorch((t) => !t)}>
+          <Ionicons name={torch ? 'flashlight' : 'flashlight-outline'} size={16} color="#F8FAFC" />
+          <Text style={styles.controlText}>{torch ? 'Torch On' : 'Torch Off'}</Text>
+        </TouchableOpacity>
+        {onFallbackRequested && (
+          <TouchableOpacity style={styles.controlPill} onPress={onFallbackRequested}>
+            <Ionicons name="calculator-outline" size={16} color="#F59E0B" />
+            <Text style={styles.controlText}>Use Math Fallback</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    padding: 20,
-    width: '100%',
-  },
+  container: { alignItems: 'center', padding: 14, width: '100%' },
+  centerBox: { alignItems: 'center', padding: 24, gap: 12 },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -80,104 +138,53 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#00E699',
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  badgeText: {
-    fontSize: 12,
-    color: '#00E699',
-    fontWeight: '700',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
+  badgeText: { fontSize: 12, color: '#00E699', fontWeight: '700' },
+  title: { fontSize: 20, fontWeight: '800', color: '#F8FAFC' },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94A3B8',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 28,
-    maxWidth: 280,
+    maxWidth: 290,
+    marginBottom: 14,
   },
-  viewfinder: {
+  cameraFrame: {
     width: 240,
     height: 240,
-    borderRadius: 24,
-    backgroundColor: '#0F1829',
-    borderWidth: 1,
-    borderColor: '#1E293B',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#00E699',
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-    marginBottom: 32,
+    marginBottom: 14,
   },
-  cornerTL: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    width: 24,
-    height: 24,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderColor: '#00E699',
+  reticle: {
+    width: 150,
+    height: 150,
+    borderWidth: 2,
+    borderColor: 'rgba(0, 230, 153, 0.85)',
+    borderRadius: 14,
   },
-  cornerTR: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 24,
-    height: 24,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderColor: '#00E699',
-  },
-  cornerBL: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    width: 24,
-    height: 24,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderColor: '#00E699',
-  },
-  cornerBR: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    width: 24,
-    height: 24,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderColor: '#00E699',
-  },
-  scanningText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '600',
-    marginTop: 12,
-  },
-  scanBtn: {
+  controlsRow: { flexDirection: 'row', gap: 10 },
+  controlPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    gap: 6,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+  },
+  controlText: { color: '#E2E8F0', fontSize: 12, fontWeight: '600' },
+  primaryBtn: {
     backgroundColor: '#00E699',
-    paddingVertical: 16,
-    paddingHorizontal: 28,
-    borderRadius: 18,
-    width: '100%',
-    maxWidth: 240,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
-  scanBtnActive: {
-    backgroundColor: '#F59E0B',
-  },
-  scanBtnText: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#070A11',
-  },
+  primaryBtnText: { color: '#070A11', fontWeight: '800' },
+  secondaryBtn: { paddingVertical: 8 },
+  secondaryBtnText: { color: '#F59E0B', fontWeight: '700', fontSize: 13 },
 });
-

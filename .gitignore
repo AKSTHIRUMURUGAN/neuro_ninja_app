@@ -36,6 +36,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# scratch and temp
+scratch/
+screen_*.png
+
 example
 
 # generated native folders
