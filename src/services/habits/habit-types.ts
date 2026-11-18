@@ -6,6 +6,30 @@ export type VerifierType = 'self' | 'friend' | 'parent' | 'mentor';
 
 export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 
+export type RecurrenceType =
+  | 'daily'
+  | 'specific_days'
+  | 'weekdays'
+  | 'weekends'
+  | 'interval'
+  | 'times_per_period';
+
+export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'anytime';
+
+export type TargetType = 'boolean' | 'count' | 'duration';
+
+export interface HabitScheduleConfig {
+  recurrenceType: RecurrenceType;
+  specificDays: number[]; // 0=Sun..6=Sat
+  intervalDays?: number; // e.g. 2 for every 2 days
+  timesPerWeek?: number; // e.g. 3 times per week
+  timeOfDay: TimeOfDay;
+  targetType: TargetType;
+  targetValue: number; // e.g. 1 for boolean, 8 for glasses, 30 for minutes
+  targetUnit?: string; // e.g. 'glasses', 'pages', 'mins'
+  habitStackTrigger?: string; // e.g. "After I pour morning coffee"
+}
+
 export interface HabitItemV3 {
   id: string;
   title: string;
@@ -27,6 +51,11 @@ export interface HabitItemV3 {
   verifierEmail?: string | null;
   linkedAlarmId?: string | null;
   linkedFocusMinutes?: number | null;
+  schedule?: HabitScheduleConfig;
+  targetType?: TargetType;
+  targetValue?: number;
+  targetUnit?: string;
+  currentProgress?: number;
   completedDays: string[];
   notCompletedDays: string[];
   recoveredDays: string[];
@@ -40,6 +69,7 @@ export interface HabitCompletionRecord {
   date: string; // YYYY-MM-DD
   status: HabitStatus;
   notes?: string;
+  progressValue?: number;
   verifiedAt?: string | null;
   verifiedBy?: string | null;
   createdAt: string;

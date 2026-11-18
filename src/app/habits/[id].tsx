@@ -30,11 +30,15 @@ import HabitStreakCard from '../../components/habits/HabitStreakCard';
 import VerifierSelectModal from '../../components/verification/VerifierSelectModal';
 import { formatLocalDateString } from '../../services/habits/streak-calculator';
 import { useNinja } from '../../context/ninja-context';
+import { useNinjaBack } from '../../hooks/use-ninja-back';
 
 export default function HabitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { notifyLifeOSChanged } = useNinja();
+  const { handleSmartBack } = useNinjaBack({
+    fallbackRoute: '/habits',
+  });
 
   const [habit, setHabit] = useState<HabitItemV3 | null>(null);
   const [stats, setStats] = useState<HabitStats | null>(null);
@@ -142,7 +146,7 @@ export default function HabitDetailScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleSmartBack}>
           <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginHorizontal: 12 }}>
@@ -204,8 +208,12 @@ export default function HabitDetailScreen() {
           completions={completions}
           selectedDate={selectedDate}
           onCycleDateStatus={handleCycleDateStatus}
+          onSelectDate={(date) => setSelectedDate(date)}
           restDays={habit.restDays}
           createdAt={habit.createdAt}
+          schedule={habit.schedule}
+          title={habit.title}
+          currentStreak={stats?.currentStreak || habit.streak}
         />
 
         {/* Rewards Info */}

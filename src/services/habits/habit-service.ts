@@ -78,6 +78,7 @@ export async function getHabits(): Promise<HabitItemV3[]> {
     title: string;
     description: string | null;
     frequency: string;
+    schedule_json: string | null;
     category: string;
     icon: string;
     color: string;
@@ -101,11 +102,18 @@ export async function getHabits(): Promise<HabitItemV3[]> {
     habit_id: string;
     date: string;
     status: string;
-  }>('SELECT habit_id, date, status FROM habit_checkins');
+    notes: string | null;
+  }>('SELECT habit_id, date, status, notes FROM habit_checkins');
 
   const checkinsMap = new Map<
     string,
-    { completed: string[]; notCompleted: string[]; recovered: string[]; all: { date: string; status: HabitStatus }[] }
+    {
+      completed: string[];
+      notCompleted: string[];
+      recovered: string[];
+      all: { date: string; status: HabitStatus }[];
+      progressByDate: Map<string, number>;
+    }
   >();
 
   for (const c of checkinRows) {
@@ -114,14 +122,26 @@ export async function getHabits(): Promise<HabitItemV3[]> {
       notCompleted: [],
       recovered: [],
       all: [],
+      progressByDate: new Map<string, number>(),
     };
     const s = (c.status as HabitStatus) || 'completed';
     bucket.all.push({ date: c.date, status: s });
     if (s === 'completed') bucket.completed.push(c.date);
     else if (s === 'not_completed') bucket.notCompleted.push(c.date);
     else if (s === 'recovered') bucket.recovered.push(c.date);
+
+    // Parse numeric progress from notes if present (e.g. "count:4")
+    if (c.notes && c.notes.startsWith('count:')) {
+      const val = parseInt(c.notes.replace('count:', ''), 10);
+      if (!isNaN(val)) {
+        bucket.progressByDate.set(c.date, val);
+      }
+    }
+
     checkinsMap.set(c.habit_id, bucket);
   }
+
+  const todayStr = formatLocalDateString(new Date());
 
   return habitRows.map((h) => {
     let restDays: number[] = [0];
@@ -130,14 +150,27 @@ export async function getHabits(): Promise<HabitItemV3[]> {
     } catch {
       restDays = [0];
     }
+
+    let schedule: HabitItemV3['schedule'] = undefined;
+    try {
+      if (h.schedule_json && h.schedule_json !== '{}') {
+        schedule = JSON.parse(h.schedule_json);
+      }
+    } catch {
+      schedule = undefined;
+    }
+
     const bucket = checkinsMap.get(h.habit_id) ?? {
       completed: [],
       notCompleted: [],
       recovered: [],
       all: [],
+      progressByDate: new Map<string, number>(),
     };
 
-    const stats = computeHabitStreaksAndStats(bucket.all, restDays, h.created_at);
+    const stats = computeHabitStreaksAndStats(bucket.all, restDays, h.created_at, schedule);
+
+    const currentProgress = bucket.progressByDate.get(todayStr) ?? (bucket.completed.includes(todayStr) ? (schedule?.targetValue || 1) : 0);
 
     return {
       id: h.habit_id,
@@ -160,6 +193,11 @@ export async function getHabits(): Promise<HabitItemV3[]> {
       verifierEmail: h.verifier_email,
       linkedAlarmId: h.linked_alarm_id,
       linkedFocusMinutes: h.linked_focus_minutes,
+      schedule,
+      targetType: schedule?.targetType || 'boolean',
+      targetValue: schedule?.targetValue || 1,
+      targetUnit: schedule?.targetUnit,
+      currentProgress,
       completedDays: bucket.completed,
       notCompletedDays: bucket.notCompleted,
       recoveredDays: bucket.recovered,
@@ -333,6 +371,100 @@ export async function getHabitCompletionsMap(
   return map;
 }
 
+/**
+ * Returns date-indexed map of completion statuses across all recorded history
+ * for high-performance 90-day Everyday & GitHub parity contribution heatmaps!
+ */
+export async function getAllHabitCompletionsMap(
+  habitId?: string
+): Promise<Record<string, HabitStatus>> {
+  const db = await getDatabase();
+  const rows = habitId
+    ? await db.getAllAsync<{ date: string; status: string }>(
+        'SELECT date, status FROM habit_checkins WHERE habit_id = ? ORDER BY date ASC',
+        habitId
+      )
+    : await db.getAllAsync<{ date: string; status: string }>(
+        'SELECT date, status FROM habit_checkins ORDER BY date ASC'
+      );
+
+  const map: Record<string, HabitStatus> = {};
+  for (const r of rows) {
+    const existing = map[r.date];
+    if (!existing || r.status === 'completed' || existing !== 'completed') {
+      map[r.date] = (r.status as HabitStatus) || 'completed';
+    }
+  }
+  return map;
+}
+
+/**
+ * Increments or decrements progress for numeric count habits (Done / Loop parity).
+ * e.g., Glasses of water, pages read, pushups.
+ */
+export async function incrementHabitProgress(
+  habitId: string,
+  dateStr: string,
+  delta: number
+): Promise<{ currentProgress: number; targetValue: number; newStatus: HabitStatus }> {
+  const db = await getDatabase();
+  const habit = await getHabitById(habitId);
+  if (!habit) {
+    return { currentProgress: 0, targetValue: 1, newStatus: 'not_attempted' };
+  }
+
+  const targetValue = Math.max(1, habit.targetValue || 1);
+  const existingCheckin = await db.getFirstAsync<{ status: string; notes: string | null }>(
+    'SELECT status, notes FROM habit_checkins WHERE habit_id = ? AND date = ?',
+    habitId,
+    dateStr
+  );
+
+  let currentVal = 0;
+  if (existingCheckin?.notes && existingCheckin.notes.startsWith('count:')) {
+    currentVal = parseInt(existingCheckin.notes.replace('count:', ''), 10) || 0;
+  } else if (existingCheckin?.status === 'completed') {
+    currentVal = targetValue;
+  }
+
+  const nextVal = Math.max(0, currentVal + delta);
+  const nextStatus: HabitStatus =
+    nextVal >= targetValue ? 'completed' : 'not_attempted';
+  const now = new Date().toISOString();
+
+  await db.withTransactionAsync(async () => {
+    if (nextVal === 0) {
+      await db.runAsync(
+        'DELETE FROM habit_checkins WHERE habit_id = ? AND date = ?',
+        habitId,
+        dateStr
+      );
+    } else {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO habit_checkins (checkin_id, habit_id, date, status, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        generateUuid('chk'),
+        habitId,
+        dateStr,
+        nextStatus,
+        `count:${nextVal}`,
+        now
+      );
+    }
+
+    if (nextStatus === 'completed' && existingCheckin?.status !== 'completed') {
+      await addFocusCoins(habit.coinReward ?? 5);
+      void villainEngine.dealDamage('habit', 50, habit.title).catch(() => {});
+    }
+  });
+
+  return {
+    currentProgress: nextVal,
+    targetValue,
+    newStatus: nextStatus,
+  };
+}
+
 export async function getHabitStats(habitId: string): Promise<HabitStats> {
   const db = await getDatabase();
   const checkins = await db.getAllAsync<{ date: string; status: string }>(
@@ -369,6 +501,7 @@ export async function createHabit(input: {
   verifierType?: VerifierType;
   verifierId?: string | null;
   verifierEmail?: string | null;
+  schedule?: HabitItemV3['schedule'];
 }): Promise<HabitItemV3[]> {
   const db = await getDatabase();
   const iconMap: Record<HabitCategory, string> = {
@@ -389,18 +522,31 @@ export async function createHabit(input: {
   const newId = generateUuid('hab');
   const now = new Date().toISOString();
 
+  // If schedule has specificDays, restDays are the inverse
+  let computedRestDays = input.restDays ?? [0];
+  if (input.schedule?.recurrenceType === 'specific_days' && Array.isArray(input.schedule.specificDays)) {
+    computedRestDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => !input.schedule?.specificDays.includes(d));
+  } else if (input.schedule?.recurrenceType === 'weekdays') {
+    computedRestDays = [0, 6]; // Sun, Sat
+  } else if (input.schedule?.recurrenceType === 'weekends') {
+    computedRestDays = [1, 2, 3, 4, 5]; // Mon-Fri
+  }
+
+  const scheduleJson = input.schedule ? JSON.stringify(input.schedule) : '{}';
+
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO habits_v2
        (habit_id, title, description, frequency, schedule_json, category, icon, color, rest_days_json, recovery_window_days, challenge_target_days, reward_points, coin_reward, xp_reward, longest_streak, verifier_type, verifier_id, verifier_email, linked_alarm_id, linked_focus_minutes, created_at, sync_status)
-       VALUES (?, ?, ?, 'daily', '{}', ?, ?, ?, ?, 1, ?, 15, 5, 25, 0, ?, ?, ?, ?, ?, ?, 'pending')`,
+       VALUES (?, ?, ?, 'daily', ?, ?, ?, ?, ?, 1, ?, 15, 5, 25, 0, ?, ?, ?, ?, ?, ?, 'pending')`,
       newId,
       input.title.trim(),
       input.description || null,
+      scheduleJson,
       input.category,
       iconMap[input.category],
       colorMap[input.category],
-      JSON.stringify(input.restDays ?? [0]),
+      JSON.stringify(computedRestDays),
       input.challengeTargetDays ?? 21,
       input.verifierType || 'self',
       input.verifierId || null,
@@ -437,6 +583,7 @@ export async function updateHabit(
     verifierEmail: string | null;
     linkedFocusMinutes: number | null;
     linkedAlarmId: string | null;
+    schedule: HabitItemV3['schedule'];
   }>
 ): Promise<HabitItemV3[]> {
   const db = await getDatabase();
@@ -454,6 +601,10 @@ export async function updateHabit(
   if (updates.category !== undefined) {
     setClauses.push('category = ?');
     params.push(updates.category);
+  }
+  if (updates.schedule !== undefined) {
+    setClauses.push('schedule_json = ?');
+    params.push(JSON.stringify(updates.schedule));
   }
   if (updates.restDays !== undefined) {
     setClauses.push('rest_days_json = ?');
