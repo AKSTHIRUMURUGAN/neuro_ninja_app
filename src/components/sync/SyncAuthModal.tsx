@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { authService } from '../../services/auth/auth-service';
 import { useNinjaAlert } from '../../context/ninja-alert-context';
 
@@ -42,38 +44,56 @@ export function SyncAuthModal({ visible, onClose, onSuccess }: SyncAuthModalProp
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // In mobile app without Google Services JSON, we provide a clean prompt or simulated 1-tap Google session
-      // If the user enters their email or chooses Google account, we authenticate via web oauth-handler
-      const googleUser = {
-        uid: 'g_' + (email.trim() ? email.trim().replace(/[^a-zA-Z0-9]/g, '_') : 'guest_' + Date.now().toString(36)),
-        email: email.trim() || 'google.ninja@neuroninja.app',
-        displayName: name.trim() || 'Ninja Explorer',
-        photoURL: undefined,
-      };
+      const authUrl = 'https://neuroninja.vercel.app/auth/mobile-connect?returnUrl=neuroninja://auth-callback';
+      const redirectUrl = 'neuroninja://auth-callback';
 
-      const result = await authService.signInWithGoogle(googleUser);
-      if (result.success) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showToast({
-          title: 'Google Connected',
-          message: 'Synced with https://neuroninja.vercel.app',
-          type: 'success',
-          icon: 'google',
-        });
-        onSuccess?.();
-        onClose();
-      } else {
-        showAlert({
-          title: 'Connection Failed',
-          message: result.error || 'Could not connect to Google auth service.',
-          type: 'error',
-          icon: 'alert-circle',
-        });
+      // Open real Firebase Google OAuth popup via Chrome Custom Tabs
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+
+      if (result.type === 'success' && result.url) {
+        const parsed = Linking.parse(result.url);
+        const token = (parsed.queryParams?.token as string) || '';
+        const userJson = (parsed.queryParams?.user as string) || '';
+        let user: any = null;
+        if (userJson) {
+          try {
+            user = JSON.parse(decodeURIComponent(userJson));
+          } catch {
+            user = null;
+          }
+        }
+
+        if (token && user) {
+          await authService.setExternalSession(token, user);
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showToast({
+            title: 'Firebase Connected',
+            message: `Signed in as ${user.name || user.email}`,
+            type: 'success',
+            icon: 'google',
+          });
+          onSuccess?.();
+          onClose();
+          return;
+        }
       }
+
+      if (result.type === 'dismiss' || result.type === 'cancel') {
+        // User closed or dismissed popup
+        return;
+      }
+
+      // If URL didn't contain tokens or direct callback failed
+      showAlert({
+        title: 'Sign-In Incomplete',
+        message: 'Could not complete Firebase Google authentication.',
+        type: 'warning',
+        icon: 'alert-circle',
+      });
     } catch (err: any) {
       showAlert({
-        title: 'Error',
-        message: err?.message || 'Google authentication error',
+        title: 'Authentication Error',
+        message: err?.message || 'Firebase Google Sign-In encountered an error',
         type: 'error',
         icon: 'alert-circle',
       });
@@ -233,34 +253,34 @@ export function SyncAuthModal({ visible, onClose, onSuccess }: SyncAuthModalProp
             {/* Google Auth Body */}
             {authMode === 'google' ? (
               <View style={styles.authSection}>
-                <Text style={styles.inputLabel}>Google Account Email</Text>
-                <View style={styles.inputRow}>
-                  <MaterialCommunityIcons name="email" size={18} color="#64748B" />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your Gmail address"
-                    placeholderTextColor="#475569"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
+                <View style={styles.firebaseInfoBadge}>
+                  <MaterialCommunityIcons name="firebase" size={18} color="#FFCA28" />
+                  <Text style={styles.firebaseInfoText}>Firebase Cloud Authentication</Text>
                 </View>
+
+                <Text style={styles.googleExplainerText}>
+                  Connect with your genuine Google account to synchronize your habits, streak milestones, calendar logs, and tasks with neuroninja.vercel.app.
+                </Text>
 
                 <TouchableOpacity
                   style={[styles.primaryActionBtn, styles.googleBtn, loading && styles.btnDisabled]}
                   onPress={handleGoogleSignIn}
                   disabled={loading}
+                  activeOpacity={0.85}
                 >
                   {loading ? (
                     <ActivityIndicator color="#070A11" />
                   ) : (
                     <>
-                      <MaterialCommunityIcons name="google" size={20} color="#070A11" />
+                      <MaterialCommunityIcons name="google" size={22} color="#070A11" />
                       <Text style={styles.googleBtnText}>1-Tap Sign In with Google</Text>
                     </>
                   )}
                 </TouchableOpacity>
+
+                <Text style={styles.googleSecurityNotice}>
+                  A secure Google account selector popup will open. Select your Gmail account to complete sign-in.
+                </Text>
               </View>
             ) : (
               /* Email Auth Body */
@@ -597,5 +617,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#64748B',
+  },
+  firebaseInfoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 202, 40, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 202, 40, 0.25)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  firebaseInfoText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFCA28',
+  },
+  googleExplainerText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    lineHeight: 18,
+    marginVertical: 4,
+  },
+  googleSecurityNotice: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 16,
   },
 });

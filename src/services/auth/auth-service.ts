@@ -25,6 +25,13 @@ export class AuthService {
     return await syncEngine.loginWithOAuth(user, 'google', false);
   }
 
+  public async setExternalSession(
+    token: string,
+    user: Partial<CloudUserProfile>
+  ): Promise<CloudUserProfile> {
+    return await syncEngine.setExternalSession(token, user);
+  }
+
   public async signOut(): Promise<void> {
     await syncEngine.logout();
   }

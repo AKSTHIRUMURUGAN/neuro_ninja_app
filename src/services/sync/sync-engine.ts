@@ -206,10 +206,10 @@ class SyncEngine {
       const token = data.token || 'oauth_session_token';
       await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
       const profile: CloudUserProfile = {
-        id: user.uid,
-        email: user.email,
-        name: user.displayName || 'Ninja User',
-        photoURL: user.photoURL,
+        id: data.user?.id || user.uid,
+        email: data.user?.email || user.email,
+        name: data.user?.name || user.displayName || 'Ninja User',
+        photoURL: data.user?.photoURL || user.photoURL,
         provider,
       };
       await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
@@ -226,6 +226,26 @@ class SyncEngine {
       this.notify();
       return { success: false, error: this.lastErrorMessage };
     }
+  }
+
+  public async setExternalSession(
+    token: string,
+    user: Partial<CloudUserProfile>
+  ): Promise<CloudUserProfile> {
+    const profile: CloudUserProfile = {
+      id: user.id || 'ninja_' + Date.now(),
+      email: user.email || '',
+      name: user.name || 'Ninja Explorer',
+      photoURL: user.photoURL,
+      provider: user.provider || 'google',
+    };
+    await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
+    this.currentState = 'synced';
+    this.lastErrorMessage = undefined;
+    this.notify();
+    void this.syncNow();
+    return profile;
   }
 
   public async refreshProfile(): Promise<CloudUserProfile | null> {
