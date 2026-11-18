@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { villainEngine } from '../villains/villain-engine';
+import { enqueueSyncItem } from '../sync/sync-engine';
 import {
   getDatabase,
   generateUuid,
@@ -321,6 +322,19 @@ export async function createTask(input: CreateTaskInput): Promise<LifeOSTask> {
 
   const created = await getTaskById(taskId);
   if (!created) throw new Error('Failed to read newly created task');
+
+  void enqueueSyncItem('task', taskId, 'CREATE', {
+    id: taskId,
+    title: created.title,
+    description: created.description,
+    status: created.status,
+    priority: created.priority,
+    listId: created.listId,
+    dueAt: created.dueAtUtc,
+    createdAt: created.createdAt,
+    updatedAt: created.updatedAt,
+  });
+
   return created;
 }
 
@@ -387,7 +401,21 @@ export async function updateTask(
     }
   });
 
-  return getTaskById(taskId);
+  const updated = await getTaskById(taskId);
+  if (updated) {
+    void enqueueSyncItem('task', taskId, 'UPDATE', {
+      id: taskId,
+      title: updated.title,
+      description: updated.description,
+      status: updated.status,
+      priority: updated.priority,
+      listId: updated.listId,
+      dueAt: updated.dueAtUtc,
+      completedAt: updated.completedAt,
+      updatedAt: updated.updatedAt,
+    });
+  }
+  return updated;
 }
 
 /**
@@ -475,6 +503,7 @@ export async function deleteTask(taskId: string): Promise<void> {
     }
   }
   await db.runAsync('DELETE FROM tasks WHERE task_id = ?', taskId);
+  void enqueueSyncItem('task', taskId, 'DELETE', { id: taskId });
 }
 
 export async function getTaskReminders(taskId: string): Promise<TaskReminderRecord[]> {

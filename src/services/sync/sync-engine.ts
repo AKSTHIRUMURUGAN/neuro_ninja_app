@@ -6,6 +6,13 @@ export interface CloudUserProfile {
   email: string;
   name: string;
   photoURL?: string;
+  provider?: string;
+  plan?: string;
+  level?: number;
+  xp?: number;
+  coins?: number;
+  currentStreak?: number;
+  longestStreak?: number;
 }
 
 export type SyncState = 'idle' | 'syncing' | 'synced' | 'offline' | 'error';
@@ -26,8 +33,8 @@ const STORAGE_KEYS = {
   LAST_SYNCED_AT: '@nn_last_synced_at',
 };
 
-// Default fallback URL (User can customize to their deployed production Vercel/VPS domain)
-export const DEFAULT_PRODUCTION_API_URL = 'https://neuronninja.com';
+// Official production web URL for bidirectional sync
+export const DEFAULT_PRODUCTION_API_URL = 'https://neuroninja.vercel.app';
 
 class SyncEngine {
   private listeners = new Set<(status: SyncStatus) => void>();
@@ -106,7 +113,7 @@ class SyncEngine {
   public async login(
     email: string,
     pass: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; user?: CloudUserProfile }> {
     try {
       this.currentState = 'syncing';
       this.notify();
@@ -123,7 +130,6 @@ class SyncEngine {
         throw new Error(data.error || 'Login failed. Check your credentials.');
       }
 
-      // Store user and token
       const token = data.token || res.headers.get('set-cookie') || 'session_token';
       await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
       if (data.user) {
@@ -136,7 +142,7 @@ class SyncEngine {
 
       // Trigger immediate initial synchronization
       void this.syncNow();
-      return { success: true };
+      return { success: true, user: data.user };
     } catch (err: any) {
       this.currentState = 'error';
       this.lastErrorMessage = err?.message || 'Login failed';
@@ -149,7 +155,7 @@ class SyncEngine {
     email: string,
     pass: string,
     name: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; user?: CloudUserProfile }> {
     try {
       this.currentState = 'syncing';
       this.notify();
@@ -166,7 +172,7 @@ class SyncEngine {
         throw new Error(data.error || 'Registration failed');
       }
 
-      // Automatically sign in
+      // Automatically sign in with credentials
       return await this.login(email, pass);
     } catch (err: any) {
       this.currentState = 'error';
@@ -174,6 +180,92 @@ class SyncEngine {
       this.notify();
       return { success: false, error: this.lastErrorMessage };
     }
+  }
+
+  public async loginWithOAuth(
+    user: { uid: string; email: string; displayName?: string; photoURL?: string },
+    provider: 'google' | 'facebook' | 'twitter' = 'google',
+    isNewUser: boolean = false
+  ): Promise<{ success: boolean; error?: string; user?: CloudUserProfile }> {
+    try {
+      this.currentState = 'syncing';
+      this.notify();
+
+      const apiUrl = await this.getApiUrl();
+      const res = await fetch(`${apiUrl}/api/auth/oauth-handler`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, provider, isNewUser }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'OAuth Sign-In failed');
+      }
+
+      const token = data.token || 'oauth_session_token';
+      await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+      const profile: CloudUserProfile = {
+        id: user.uid,
+        email: user.email,
+        name: user.displayName || 'Ninja User',
+        photoURL: user.photoURL,
+        provider,
+      };
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
+
+      this.currentState = 'synced';
+      this.lastErrorMessage = undefined;
+      this.notify();
+
+      void this.syncNow();
+      return { success: true, user: profile };
+    } catch (err: any) {
+      this.currentState = 'error';
+      this.lastErrorMessage = err?.message || 'OAuth Sign-In failed';
+      this.notify();
+      return { success: false, error: this.lastErrorMessage };
+    }
+  }
+
+  public async refreshProfile(): Promise<CloudUserProfile | null> {
+    const token = await this.getAuthToken();
+    const apiUrl = await this.getApiUrl();
+    if (!token) return null;
+
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Cookie: `auth-token=${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          const profile: CloudUserProfile = {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.name,
+            photoURL: data.user.photoURL,
+            provider: data.user.provider,
+            plan: data.user.plan,
+            level: data.user.level,
+            xp: data.user.xp,
+            coins: data.user.coins,
+            currentStreak: data.user.currentStreak,
+            longestStreak: data.user.longestStreak,
+          };
+          await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
+          this.notify();
+          return profile;
+        }
+      }
+    } catch (err) {
+      console.warn('[SyncEngine] Failed to refresh profile:', err);
+    }
+    return null;
   }
 
   public async logout(): Promise<void> {
@@ -213,13 +305,16 @@ class SyncEngine {
     let syncedCount = 0;
 
     try {
-      // Step 1: Drain pending local Outbox mutations
+      // Step 1: Drain pending local Outbox mutations to Web
       syncedCount = await this.drainOutbox(apiUrl, token);
 
       // Step 2: Pull remote deltas from server (Last-Write-Wins)
       await this.pullRemoteDeltas(apiUrl, token);
 
-      // Step 3: Record successful sync timestamp
+      // Step 3: Refresh user level, coins, and streak
+      await this.refreshProfile();
+
+      // Step 4: Record successful sync timestamp
       const now = new Date().toISOString();
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNCED_AT, now);
 
@@ -257,9 +352,15 @@ class SyncEngine {
       try {
         const payload = JSON.parse(item.payload_json);
         let endpoint = '';
-        let method = item.action === 'DELETE' ? 'DELETE' : 'POST';
+        const method = item.action === 'DELETE' ? 'DELETE' : 'POST';
 
         switch (item.entity_type) {
+          case 'habit':
+            endpoint = `${apiUrl}/api/habits`;
+            break;
+          case 'task':
+            endpoint = `${apiUrl}/api/tasks`;
+            break;
           case 'journal':
             endpoint = `${apiUrl}/api/journal`;
             break;
@@ -302,6 +403,9 @@ class SyncEngine {
           case 'shopping_lists':
             endpoint = `${apiUrl}/api/shopping/sync`;
             break;
+          case 'user_stats':
+            endpoint = `${apiUrl}/api/user/sync-stats`;
+            break;
           default:
             continue;
         }
@@ -317,7 +421,6 @@ class SyncEngine {
           await db.runAsync('DELETE FROM sync_outbox WHERE outbox_id = ?', item.outbox_id);
           successCount++;
         } else {
-          // Increment attempts
           await db.runAsync(
             "UPDATE sync_outbox SET attempts = attempts + 1, last_error = ? WHERE outbox_id = ?",
             `HTTP ${res.status}`,
@@ -330,7 +433,7 @@ class SyncEngine {
           err?.message || 'Network error',
           item.outbox_id
         );
-        throw err; // Stop batch on offline/network failure
+        throw err; // Stop batch on offline failure
       }
     }
 
@@ -345,7 +448,135 @@ class SyncEngine {
 
     const db = await getDatabase();
 
-    // 1. Pull Journal
+    // 1. Pull Habits
+    try {
+      const hRes = await fetch(`${apiUrl}/api/habits`, { headers });
+      if (hRes.ok) {
+        const habits = await hRes.json();
+        if (Array.isArray(habits)) {
+          for (const h of habits) {
+            const hId = h.id || h.habit_id;
+            if (!hId) continue;
+            await db.runAsync(
+              `INSERT INTO habits_v2 (
+                habit_id, title, frequency, schedule_json, category, icon, color,
+                rest_days_json, recovery_window_days, challenge_target_days, reward_points, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(habit_id) DO UPDATE SET
+                title = excluded.title,
+                frequency = excluded.frequency,
+                schedule_json = excluded.schedule_json,
+                category = excluded.category,
+                icon = excluded.icon,
+                color = excluded.color,
+                rest_days_json = excluded.rest_days_json,
+                challenge_target_days = excluded.challenge_target_days,
+                reward_points = excluded.reward_points`,
+              [
+                hId,
+                h.title || 'Habit',
+                h.frequency || 'daily',
+                JSON.stringify(h.schedule || h.targetDays || []),
+                h.category || 'mind',
+                h.icon || 'leaf-outline',
+                h.color || '#10B981',
+                JSON.stringify(h.restDays || []),
+                h.recoveryWindowDays ?? 1,
+                h.targetDaysCount ?? h.challenge_target_days ?? 21,
+                h.rewardPoints ?? 10,
+                h.createdAt || new Date().toISOString(),
+              ]
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[SyncEngine] Pull habits failed:', err);
+    }
+
+    // 2. Pull Tasks
+    try {
+      const tRes = await fetch(`${apiUrl}/api/tasks`, { headers });
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        const tasks = Array.isArray(tData) ? tData : (tData.tasks || tData.data || []);
+        for (const t of tasks) {
+          const tId = t.id || t.task_id;
+          if (!tId) continue;
+          await db.runAsync(
+            `INSERT INTO tasks (
+              task_id, title, description, status, priority, list_id,
+              due_at_utc, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+              title = excluded.title,
+              description = excluded.description,
+              status = excluded.status,
+              priority = excluded.priority,
+              list_id = excluded.list_id,
+              due_at_utc = excluded.due_at_utc,
+              updated_at = excluded.updated_at
+            WHERE excluded.updated_at >= tasks.updated_at`,
+            [
+              tId,
+              t.title || 'Task',
+              t.description || null,
+              t.status || 'inbox',
+              t.priority || 'normal',
+              t.listId || null,
+              t.dueAt || t.dueDate || null,
+              t.createdAt || new Date().toISOString(),
+              t.updatedAt || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('[SyncEngine] Pull tasks failed:', err);
+    }
+
+    // 3. Pull Finance Expenses & Transactions
+    try {
+      const eRes = await fetch(`${apiUrl}/api/expenses`, { headers });
+      if (eRes.ok) {
+        const eData = await eRes.json();
+        const items = Array.isArray(eData) ? eData : (eData.expenses || eData.data || []);
+        for (const exp of items) {
+          const expId = exp.id || exp._id;
+          if (!expId) continue;
+          await db.runAsync(
+            `INSERT INTO finance_transactions_v2 (
+              id, amount, type, category, category_group, spent_on, payment_method, description, timestamp, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              amount = excluded.amount,
+              type = excluded.type,
+              category = excluded.category,
+              category_group = excluded.category_group,
+              spent_on = excluded.spent_on,
+              payment_method = excluded.payment_method,
+              description = excluded.description,
+              timestamp = excluded.timestamp`,
+            [
+              expId,
+              Number(exp.amount) || 0,
+              exp.type || 'expense',
+              exp.category || 'General',
+              exp.categoryGroup || 'personal',
+              exp.spentOn || 'personal',
+              exp.paymentMethod || 'upi',
+              exp.description || '',
+              exp.date || exp.timestamp || new Date().toISOString(),
+              exp.createdAt || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('[SyncEngine] Pull expenses failed:', err);
+    }
+
+    // 4. Pull Journal Entries
     try {
       const jRes = await fetch(`${apiUrl}/api/journal?limit=100`, { headers });
       if (jRes.ok) {
@@ -373,26 +604,30 @@ class SyncEngine {
               updated_at = excluded.updated_at,
               sync_status = 'synced'
             WHERE excluded.updated_at >= journal_entries.updated_at`,
-            e.id,
-            e.type || 'morning',
-            e.date,
-            e.title || null,
-            e.content || '',
-            e.moodRating ?? null,
-            e.energyRating ?? null,
-            JSON.stringify(e.tags || []),
-            e.morningData ? JSON.stringify(e.morningData) : null,
-            e.eveningData ? JSON.stringify(e.eveningData) : null,
-            e.rantData ? JSON.stringify(e.rantData) : null,
-            e.isBurned ? 1 : 0,
-            e.createdAt || new Date().toISOString(),
-            e.updatedAt || new Date().toISOString()
+            [
+              e.id,
+              e.type || 'morning',
+              e.date,
+              e.title || null,
+              e.content || '',
+              e.moodRating ?? null,
+              e.energyRating ?? null,
+              JSON.stringify(e.tags || []),
+              e.morningData ? JSON.stringify(e.morningData) : null,
+              e.eveningData ? JSON.stringify(e.eveningData) : null,
+              e.rantData ? JSON.stringify(e.rantData) : null,
+              e.isBurned ? 1 : 0,
+              e.createdAt || new Date().toISOString(),
+              e.updatedAt || new Date().toISOString(),
+            ]
           );
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[SyncEngine] Pull journal failed:', err);
+    }
 
-    // 2. Pull Notes
+    // 5. Pull Notes
     try {
       const nRes = await fetch(`${apiUrl}/api/notes`, { headers });
       if (nRes.ok) {
@@ -414,19 +649,23 @@ class SyncEngine {
               updated_at = excluded.updated_at,
               sync_status = 'synced'
             WHERE excluded.updated_at >= notes.updated_at`,
-            n.id,
-            n.title || 'Untitled',
-            n.content || '',
-            JSON.stringify(n.tags || []),
-            n.category || 'General',
-            n.isPinned ? 1 : 0,
-            n.isArchived ? 1 : 0,
-            n.createdAt || new Date().toISOString(),
-            n.updatedAt || new Date().toISOString()
+            [
+              n.id,
+              n.title || 'Untitled',
+              n.content || '',
+              JSON.stringify(n.tags || []),
+              n.category || 'General',
+              n.isPinned ? 1 : 0,
+              n.isArchived ? 1 : 0,
+              n.createdAt || new Date().toISOString(),
+              n.updatedAt || new Date().toISOString(),
+            ]
           );
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[SyncEngine] Pull notes failed:', err);
+    }
   }
 }
 

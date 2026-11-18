@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { NinjaPalette } from '../../constants/theme';
+import { useNinjaAlert } from '../../context/ninja-alert-context';
+import { syncEngine, type SyncStatus } from '../../services/sync/sync-engine';
+import { SyncAuthModal } from '../../components/sync/SyncAuthModal';
 import {
   PRODUCTIVITY_MODES,
   useNinja,
@@ -25,7 +28,37 @@ import { getTodayKey } from '../../services/storage';
 
 export default function LifeOSHubScreen() {
   const router = useRouter();
+  const { showToast } = useNinjaAlert();
   const { productivityMode, setProductivityMode, lifeOSRevision } = useNinja();
+
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+
+  useEffect(() => {
+    return syncEngine.subscribe(setSyncStatus);
+  }, []);
+
+  const handleCloudSyncTap = async () => {
+    if (!syncStatus?.user) {
+      setShowSyncModal(true);
+    } else {
+      showToast({
+        title: 'Syncing with Web...',
+        message: 'Connecting to https://neuroninja.vercel.app',
+        type: 'info',
+        icon: 'cloud-sync',
+      });
+      const res = await syncEngine.syncNow();
+      if (res.success) {
+        showToast({
+          title: 'Synced with Web',
+          message: 'All LifeOS data up to date',
+          type: 'success',
+          icon: 'cloud-check',
+        });
+      }
+    }
+  };
 
   const [todayTasksCount, setTodayTasksCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
@@ -112,15 +145,38 @@ export default function LifeOSHubScreen() {
             <Text style={styles.kicker}>NINJA LIFEOS</Text>
             <Text style={styles.title}>Plan & Command</Text>
           </View>
-          <View style={[styles.modePill, { borderColor: activeProfile.accentColor }]}>
-            <MaterialCommunityIcons
-              name={activeProfile.icon as any}
-              size={14}
-              color={activeProfile.accentColor}
-            />
-            <Text style={[styles.modePillText, { color: activeProfile.accentColor }]}>
-              {activeProfile.label}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.cloudHeaderBtn, syncStatus?.user && styles.cloudHeaderBtnActive]}
+              onPress={handleCloudSyncTap}
+              accessibilityLabel="Cloud Sync"
+            >
+              <MaterialCommunityIcons
+                name={
+                  syncStatus?.state === 'syncing'
+                    ? 'cloud-sync'
+                    : syncStatus?.user
+                    ? 'cloud-check'
+                    : 'cloud-outline'
+                }
+                size={14}
+                color={syncStatus?.user ? '#00E699' : '#64748B'}
+              />
+              <Text style={[styles.cloudHeaderText, syncStatus?.user && styles.cloudHeaderTextActive]}>
+                {syncStatus?.user ? 'SYNCED' : 'LOCAL'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={[styles.modePill, { borderColor: activeProfile.accentColor }]}>
+              <MaterialCommunityIcons
+                name={activeProfile.icon as any}
+                size={14}
+                color={activeProfile.accentColor}
+              />
+              <Text style={[styles.modePillText, { color: activeProfile.accentColor }]}>
+                {activeProfile.label}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -493,6 +549,20 @@ export default function LifeOSHubScreen() {
           <MaterialCommunityIcons name="chevron-right" size={22} color="#64748B" />
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Sync Auth Modal */}
+      <SyncAuthModal
+        visible={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        onSuccess={() => {
+          showToast({
+            title: 'Connected',
+            message: 'Synced with https://neuroninja.vercel.app',
+            type: 'success',
+            icon: 'cloud-check',
+          });
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -505,6 +575,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+  },
+  cloudHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F1829',
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  cloudHeaderBtnActive: {
+    borderColor: 'rgba(0, 230, 153, 0.4)',
+    backgroundColor: 'rgba(0, 230, 153, 0.08)',
+  },
+  cloudHeaderText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.8,
+  },
+  cloudHeaderTextActive: {
+    color: '#00E699',
   },
   kicker: { color: NinjaPalette.emerald, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
   title: { fontSize: 26, fontWeight: '900', color: '#F8FAFC' },

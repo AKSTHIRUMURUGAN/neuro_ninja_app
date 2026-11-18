@@ -6,24 +6,26 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Modal,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { NinjaPalette } from '../../constants/theme';
+import * as WebBrowser from 'expo-web-browser';
 import { useNinjaAlert } from '../../context/ninja-alert-context';
+import { useNinjaBack } from '../../hooks/use-ninja-back';
 import {
   syncEngine,
   type SyncStatus,
   DEFAULT_PRODUCTION_API_URL,
 } from '../../services/sync/sync-engine';
+import { SyncAuthModal } from '../../components/sync/SyncAuthModal';
 
 export default function CloudSyncSettingsScreen() {
-  const router = useRouter();
-  const { showToast, showAlert } = useNinjaAlert();
+  const { showToast } = useNinjaAlert();
+  const { handleSmartBack } = useNinjaBack({
+    fallbackRoute: '/(tabs)/settings',
+  });
 
   const [status, setStatus] = useState<SyncStatus>({
     state: 'idle',
@@ -35,14 +37,8 @@ export default function CloudSyncSettingsScreen() {
 
   const [isEditingUrl, setIsEditingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState(DEFAULT_PRODUCTION_API_URL);
-
-  // Auth Modal
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [nameInput, setNameInput] = useState('');
-  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     const unsubscribe = syncEngine.subscribe((newStatus) => {
@@ -65,88 +61,28 @@ export default function CloudSyncSettingsScreen() {
   };
 
   const handleTriggerSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     const result = await syncEngine.syncNow();
+    setIsSyncing(false);
+
     if (result.success) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast({
         title: 'Sync Complete',
-        message: `Cloud synchronized with production server. (${result.syncedItems} local changes pushed).`,
+        message: `Synced with https://neuroninja.vercel.app (${result.syncedItems} local changes pushed).`,
         type: 'success',
         icon: 'cloud-check',
       });
     } else {
       showToast({
         title: 'Sync Deferred',
-        message: result.error || 'Server unreachable or offline. Local records safe.',
+        message: result.error || 'Server offline. Local records remain safe.',
         type: 'info',
         icon: 'cloud-off-outline',
       });
-    }
-  };
-
-  const handleAuthSubmit = async () => {
-    if (!emailInput.trim() || !passwordInput.trim()) {
-      showAlert({
-        title: 'Missing Fields',
-        message: 'Please enter both email and password.',
-        type: 'warning',
-        icon: 'alert-circle',
-      });
-      return;
-    }
-
-    setIsSubmittingAuth(true);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    if (authMode === 'login') {
-      const res = await syncEngine.login(emailInput, passwordInput);
-      setIsSubmittingAuth(false);
-      if (res.success) {
-        setShowAuthModal(false);
-        showToast({
-          title: 'Connected to Cloud',
-          message: 'Signed in successfully. Cloud sync is active.',
-          type: 'success',
-          icon: 'check-circle',
-        });
-      } else {
-        showAlert({
-          title: 'Sign In Failed',
-          message: res.error || 'Could not log in to production server.',
-          type: 'error',
-          icon: 'alert-circle',
-        });
-      }
-    } else {
-      if (!nameInput.trim()) {
-        setIsSubmittingAuth(false);
-        showAlert({
-          title: 'Name Required',
-          message: 'Please enter your name.',
-          type: 'warning',
-          icon: 'account',
-        });
-        return;
-      }
-      const res = await syncEngine.register(emailInput, passwordInput, nameInput);
-      setIsSubmittingAuth(false);
-      if (res.success) {
-        setShowAuthModal(false);
-        showToast({
-          title: 'Account Created',
-          message: 'Registration successful. Cloud sync is active.',
-          type: 'success',
-          icon: 'check-circle',
-        });
-      } else {
-        showAlert({
-          title: 'Registration Failed',
-          message: res.error || 'Could not register on production server.',
-          type: 'error',
-          icon: 'alert-circle',
-        });
-      }
     }
   };
 
@@ -155,32 +91,51 @@ export default function CloudSyncSettingsScreen() {
     await syncEngine.logout();
     showToast({
       title: 'Disconnected',
-      message: 'Logged out. Local changes will remain offline.',
+      message: 'Account signed out. Local data preserved offline.',
       type: 'info',
       icon: 'logout',
     });
   };
 
+  const handleOpenWeb = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await WebBrowser.openBrowserAsync('https://neuroninja.vercel.app');
+    } catch {
+      showToast({
+        title: 'Open Web',
+        message: 'Visit https://neuroninja.vercel.app in your browser',
+        type: 'info',
+        icon: 'open-in-new',
+      });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleSmartBack} accessibilityLabel="Back">
           <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.badge}>OFFLINE-FIRST CLOUD SYNC</Text>
           <Text style={styles.title}>Cloud Connect</Text>
         </View>
-        <TouchableOpacity style={styles.syncTopBtn} onPress={handleTriggerSync}>
-          <MaterialCommunityIcons
-            name={status.state === 'syncing' ? 'loading' : 'cloud-sync'}
-            size={20}
-            color="#00E699"
-          />
+        <TouchableOpacity
+          style={styles.syncTopBtn}
+          onPress={handleTriggerSync}
+          disabled={isSyncing}
+        >
+          {isSyncing ? (
+            <ActivityIndicator size="small" color="#00E699" />
+          ) : (
+            <MaterialCommunityIcons name="cloud-sync" size={20} color="#00E699" />
+          )}
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Status Hero Card */}
         <View style={styles.statusCard}>
           <View style={styles.statusHeader}>
@@ -189,7 +144,7 @@ export default function CloudSyncSettingsScreen() {
                 styles.statusDot,
                 {
                   backgroundColor:
-                    status.state === 'syncing'
+                    status.state === 'syncing' || isSyncing
                       ? '#38BDF8'
                       : status.user
                       ? '#00E699'
@@ -198,7 +153,7 @@ export default function CloudSyncSettingsScreen() {
               ]}
             />
             <Text style={styles.statusLabel}>
-              {status.state === 'syncing'
+              {status.state === 'syncing' || isSyncing
                 ? 'SYNCHRONIZING WITH CLOUD...'
                 : status.user
                 ? `CONNECTED • ${status.user.email}`
@@ -212,9 +167,32 @@ export default function CloudSyncSettingsScreen() {
 
           <Text style={styles.statusDesc}>
             {status.user
-              ? 'All your Notes, Journals, and Finances save locally in 0ms and sync to your production web app whenever network is available.'
+              ? 'Your Habits, LifeOS Tasks, and Finances save locally in 0ms and sync to your production web app whenever network is available.'
               : 'Your data is safely stored in local offline SQLite. Sign in with your NeuroNinja web account to sync seamlessly across mobile & desktop.'}
           </Text>
+
+          {/* User Profile Strip if logged in */}
+          {status.user && (
+            <View style={styles.profileBadgeRow}>
+              <View style={styles.profilePill}>
+                <MaterialCommunityIcons name="shield-star" size={14} color="#38BDF8" />
+                <Text style={styles.profilePillText}>Lvl {status.user.level || 1}</Text>
+              </View>
+              <View style={styles.profilePill}>
+                <MaterialCommunityIcons name="star-shooting" size={14} color="#F59E0B" />
+                <Text style={styles.profilePillText}>{status.user.xp || 0} XP</Text>
+              </View>
+              <View style={styles.profilePill}>
+                <MaterialCommunityIcons name="gold" size={14} color="#FBBF24" />
+                <Text style={styles.profilePillText}>{status.user.coins || 100} Coins</Text>
+              </View>
+              {status.user.provider && (
+                <View style={[styles.profilePill, styles.providerPill]}>
+                  <Text style={styles.providerPillText}>{status.user.provider.toUpperCase()}</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Sync Stats Row */}
           <View style={styles.statsRow}>
@@ -239,9 +217,13 @@ export default function CloudSyncSettingsScreen() {
           <View style={styles.actionRow}>
             {status.user ? (
               <>
-                <TouchableOpacity style={styles.syncBtn} onPress={handleTriggerSync}>
+                <TouchableOpacity
+                  style={[styles.syncBtn, isSyncing && { opacity: 0.7 }]}
+                  onPress={handleTriggerSync}
+                  disabled={isSyncing}
+                >
                   <MaterialCommunityIcons name="cloud-sync-outline" size={18} color="#070A11" />
-                  <Text style={styles.syncBtnText}>Sync Now</Text>
+                  <Text style={styles.syncBtnText}>{isSyncing ? 'Syncing...' : 'Sync Now'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
                   <Text style={styles.logoutBtnText}>Disconnect</Text>
@@ -250,21 +232,33 @@ export default function CloudSyncSettingsScreen() {
             ) : (
               <TouchableOpacity
                 style={styles.connectBtn}
-                onPress={() => {
-                  setAuthMode('login');
-                  setShowAuthModal(true);
-                }}
+                onPress={() => setShowAuthModal(true)}
               >
                 <MaterialCommunityIcons name="cloud-lock-outline" size={18} color="#070A11" />
-                <Text style={styles.connectBtnText}>Sign In with Web Account</Text>
+                <Text style={styles.connectBtnText}>Connect Google or Email</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
+        {/* Web App Quick Link Card */}
+        <View style={styles.card}>
+          <View style={styles.webHeaderRow}>
+            <MaterialCommunityIcons name="web" size={20} color="#38BDF8" />
+            <Text style={styles.cardHeading}>PRODUCTION WEB APP</Text>
+          </View>
+          <Text style={styles.webDesc}>
+            Access your full NeuroNinja suite on desktop, browser, or Chromebook with full cross-device synchronization:
+          </Text>
+          <TouchableOpacity style={styles.openWebBtn} onPress={handleOpenWeb}>
+            <Text style={styles.openWebBtnText}>https://neuroninja.vercel.app</Text>
+            <MaterialCommunityIcons name="open-in-new" size={16} color="#00E699" />
+          </TouchableOpacity>
+        </View>
+
         {/* Server Endpoint Configuration */}
         <View style={styles.card}>
-          <Text style={styles.cardHeading}>PRODUCTION ENDPOINT CONFIGURATION</Text>
+          <Text style={styles.cardHeading}>REST API ENDPOINT</Text>
 
           {isEditingUrl ? (
             <View style={styles.urlEditBox}>
@@ -272,7 +266,7 @@ export default function CloudSyncSettingsScreen() {
                 style={styles.urlInput}
                 value={urlInput}
                 onChangeText={setUrlInput}
-                placeholder="https://your-production-url.com"
+                placeholder="https://neuroninja.vercel.app"
                 placeholderTextColor="#64748B"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -295,7 +289,7 @@ export default function CloudSyncSettingsScreen() {
           ) : (
             <View style={styles.urlDisplayRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.urlLabel}>REST API Endpoint</Text>
+                <Text style={styles.urlLabel}>Active Server</Text>
                 <Text style={styles.urlValue} numberOfLines={1}>
                   {status.apiUrl}
                 </Text>
@@ -309,143 +303,38 @@ export default function CloudSyncSettingsScreen() {
               </TouchableOpacity>
             </View>
           )}
-
-          <Text style={styles.cardNote}>
-            Points to your live Next.js backend for `/api/notes`, `/api/journal`, `/api/expenses`, and `/api/auth`.
-          </Text>
         </View>
 
-        {/* Architecture Info Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardHeading}>LOCAL-FIRST CAPABILITIES</Text>
-
-          <View style={styles.featureRow}>
-            <MaterialCommunityIcons name="flash-outline" size={20} color="#00E699" />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.featureTitle}>0ms Instant Local Writes</Text>
-              <Text style={styles.featureDesc}>
-                All notes, journals, and expense entries commit to device SQLite instantly without waiting for network.
-              </Text>
-            </View>
+        {/* Sync Guarantees */}
+        <View style={styles.guaranteeCard}>
+          <Text style={styles.guaranteeTitle}>Our Offline-First Guarantee</Text>
+          <View style={styles.guaranteeItem}>
+            <MaterialCommunityIcons name="check-circle" size={16} color="#00E699" />
+            <Text style={styles.guaranteeText}>
+              Every action saves instantly to local SQLite first (0ms latency).
+            </Text>
           </View>
-
-          <View style={styles.featureRow}>
-            <MaterialCommunityIcons name="tray-full" size={20} color="#38BDF8" />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.featureTitle}>Durable Outbox Queue</Text>
-              <Text style={styles.featureDesc}>
-                Offline mutations are safely queued and automatically drain in sequential order when you reconnect.
-              </Text>
-            </View>
+          <View style={styles.guaranteeItem}>
+            <MaterialCommunityIcons name="check-circle" size={16} color="#00E699" />
+            <Text style={styles.guaranteeText}>
+              You are never locked out of your apps or habits without internet.
+            </Text>
           </View>
-
-          <View style={styles.featureRow}>
-            <MaterialCommunityIcons name="scale-balance" size={20} color="#F59E0B" />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.featureTitle}>Last-Write-Wins Conflict Resolution</Text>
-              <Text style={styles.featureDesc}>
-                Client UUIDs and timestamps prevent duplication and preserve the freshest edit across devices.
-              </Text>
-            </View>
+          <View style={styles.guaranteeItem}>
+            <MaterialCommunityIcons name="check-circle" size={16} color="#00E699" />
+            <Text style={styles.guaranteeText}>
+              No initial login required — connect only when you want cloud sync.
+            </Text>
           </View>
         </View>
       </ScrollView>
 
-      {/* Cloud Authentication Modal */}
-      <Modal
+      {/* Sync Auth Modal */}
+      <SyncAuthModal
         visible={showAuthModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowAuthModal(false)}
-      >
-        <SafeAreaView style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalBadge}>NEURONINJA CLOUD</Text>
-                <Text style={styles.modalTitle}>
-                  {authMode === 'login' ? 'Sign In' : 'Create Account'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.modalCloseBtn}
-                onPress={() => setShowAuthModal(false)}
-              >
-                <Ionicons name="close" size={22} color="#F8FAFC" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalDesc}>
-              {authMode === 'login'
-                ? 'Sign in with your NeuroNinja web credentials to sync your entire productivity suite.'
-                : 'Create a new account on your production backend.'}
-            </Text>
-
-            {authMode === 'register' && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Full Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Master Ninja"
-                  placeholderTextColor="#64748B"
-                  value={nameInput}
-                  onChangeText={setNameInput}
-                />
-              </View>
-            )}
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="ninja@neuronninja.com"
-                placeholderTextColor="#64748B"
-                value={emailInput}
-                onChangeText={setEmailInput}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="••••••••••••"
-                placeholderTextColor="#64748B"
-                value={passwordInput}
-                onChangeText={setPasswordInput}
-                secureTextEntry
-              />
-            </View>
-
-            <TouchableOpacity
-              style={styles.submitBtn}
-              onPress={handleAuthSubmit}
-              disabled={isSubmittingAuth}
-            >
-              {isSubmittingAuth ? (
-                <ActivityIndicator size="small" color="#070A11" />
-              ) : (
-                <Text style={styles.submitBtnText}>
-                  {authMode === 'login' ? 'Connect Account' : 'Register & Connect'}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.toggleModeBtn}
-              onPress={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-            >
-              <Text style={styles.toggleModeText}>
-                {authMode === 'login'
-                  ? "Don't have an account? Create one"
-                  : 'Already have an account? Sign in'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() => void handleTriggerSync()}
+      />
     </SafeAreaView>
   );
 }
@@ -458,95 +347,131 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   backBtn: {
-    padding: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#0F1829',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   badge: {
-    color: '#00E699',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 1.5,
+    color: '#00E699',
+    letterSpacing: 1.2,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#F8FAFC',
   },
   syncTopBtn: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(0, 230, 153, 0.1)',
-    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(0, 230, 153, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scroll: {
-    padding: 20,
+    padding: 16,
+    gap: 14,
     paddingBottom: 40,
   },
   statusCard: {
-    backgroundColor: '#0B132B',
+    backgroundColor: '#0B1220',
     borderRadius: 20,
-    padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 153, 0.25)',
-    marginBottom: 16,
+    borderColor: 'rgba(0, 230, 153, 0.2)',
+    padding: 18,
+    gap: 12,
   },
   statusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: 8,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 8,
   },
   statusLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#00E699',
-    letterSpacing: 1.2,
+    color: '#94A3B8',
+    letterSpacing: 1,
   },
   statusTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#F8FAFC',
-    marginBottom: 6,
   },
   statusDesc: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#94A3B8',
     lineHeight: 18,
-    marginBottom: 16,
+  },
+  profileBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+  },
+  profilePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F1829',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  profilePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  providerPill: {
+    borderColor: 'rgba(0, 230, 153, 0.3)',
+  },
+  providerPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#00E699',
+    letterSpacing: 0.8,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    backgroundColor: '#070A11',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
   },
   statBox: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    gap: 2,
   },
   statNum: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#00E699',
   },
   statTag: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#64748B',
-    marginTop: 2,
+    fontWeight: '600',
   },
   actionRow: {
     flexDirection: 'row',
@@ -557,58 +482,85 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
     backgroundColor: '#00E699',
-    paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
+    height: 46,
+    gap: 6,
   },
   syncBtnText: {
-    color: '#070A11',
     fontSize: 14,
     fontWeight: '800',
+    color: '#070A11',
   },
   logoutBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F1829',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.3)',
+    height: 46,
   },
   logoutBtnText: {
-    color: '#EF4444',
     fontSize: 13,
     fontWeight: '700',
+    color: '#EF4444',
   },
   connectBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     backgroundColor: '#00E699',
-    paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
+    height: 48,
+    gap: 8,
   },
   connectBtnText: {
-    color: '#070A11',
     fontSize: 14,
     fontWeight: '800',
+    color: '#070A11',
   },
   card: {
-    backgroundColor: '#0F1829',
+    backgroundColor: '#0B1220',
     borderRadius: 20,
-    padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    marginBottom: 16,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 16,
+    gap: 10,
+  },
+  webHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   cardHeading: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    color: NinjaPalette.emerald,
-    letterSpacing: 1.5,
-    marginBottom: 12,
+    color: '#94A3B8',
+    letterSpacing: 1.1,
+  },
+  webDesc: {
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 18,
+  },
+  openWebBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#070A11',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.25)',
+  },
+  openWebBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#00E699',
   },
   urlDisplayRow: {
     flexDirection: 'row',
@@ -618,38 +570,39 @@ const styles = StyleSheet.create({
   urlLabel: {
     fontSize: 11,
     color: '#64748B',
+    fontWeight: '600',
   },
   urlValue: {
-    fontSize: 14,
+    fontSize: 13,
+    color: '#38BDF8',
     fontWeight: '700',
-    color: '#F8FAFC',
-    marginTop: 2,
   },
   editUrlBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    backgroundColor: '#0F1829',
+    borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0, 230, 153, 0.1)',
+    gap: 4,
   },
   editUrlText: {
-    color: '#00E699',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
+    color: '#00E699',
   },
   urlEditBox: {
     gap: 10,
   },
   urlInput: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 10,
-    padding: 12,
+    backgroundColor: '#070A11',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     color: '#F8FAFC',
+    fontSize: 13,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
-    fontSize: 13,
   },
   urlEditBtns: {
     flexDirection: 'row',
@@ -659,128 +612,49 @@ const styles = StyleSheet.create({
   cancelBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 10,
+    backgroundColor: '#0F1829',
   },
   cancelBtnText: {
-    color: '#94A3B8',
     fontSize: 12,
+    color: '#94A3B8',
     fontWeight: '600',
   },
   saveBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: '#00E699',
   },
   saveBtnText: {
-    color: '#070A11',
     fontSize: 12,
+    color: '#070A11',
     fontWeight: '800',
   },
-  cardNote: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 10,
-    lineHeight: 16,
+  guaranteeCard: {
+    backgroundColor: '#0B1220',
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.15)',
   },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  featureTitle: {
+  guaranteeTitle: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  featureDesc: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-  },
-  modalContent: {
-    flex: 1,
-    backgroundColor: '#070A11',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    marginTop: 60,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  modalBadge: {
+    fontWeight: '800',
     color: '#00E699',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#F8FAFC',
-    marginTop: 2,
+  guaranteeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  modalCloseBtn: {
-    padding: 6,
-  },
-  modalDesc: {
+  guaranteeText: {
     fontSize: 12,
     color: '#94A3B8',
-    lineHeight: 18,
-    marginBottom: 20,
-  },
-  inputGroup: {
-    marginBottom: 14,
-  },
-  inputLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#0F1829',
-    borderRadius: 12,
-    padding: 14,
-    color: '#F8FAFC',
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  submitBtn: {
-    backgroundColor: '#00E699',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  submitBtnText: {
-    color: '#070A11',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  toggleModeBtn: {
-    alignItems: 'center',
-    marginTop: 16,
-    padding: 8,
-  },
-  toggleModeText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '600',
+    flex: 1,
+    lineHeight: 16,
   },
 });
