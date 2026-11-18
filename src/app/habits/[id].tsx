@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,21 +16,24 @@ import * as Haptics from 'expo-haptics';
 import {
   getHabitById,
   getHabitCompletionsMap,
-  getHabitStats,
   cycleHabitStatus,
   deleteHabit,
   updateHabit,
   type HabitItemV3,
   type HabitStatus,
-  type HabitStats,
-  type VerifierType,
 } from '../../services/habits/habit-service';
-import HabitCalendarMatrix from '../../components/habits/HabitCalendarMatrix';
-import HabitStreakCard from '../../components/habits/HabitStreakCard';
-import VerifierSelectModal from '../../components/verification/VerifierSelectModal';
-import { formatLocalDateString } from '../../services/habits/streak-calculator';
+import {
+  calculateHabitComprehensiveStats,
+  formatLocalDateString,
+  type HabitDetailedStatsResult,
+} from '../../services/habits/streak-calculator';
+import HabitCalendarView from '../../components/habits/HabitCalendarView';
+import HabitStatisticsView from '../../components/habits/HabitStatisticsView';
+import HabitEditView from '../../components/habits/HabitEditView';
 import { useNinja } from '../../context/ninja-context';
 import { useNinjaBack } from '../../hooks/use-ninja-back';
+
+type TabType = 'calendar' | 'statistics' | 'edit';
 
 export default function HabitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,25 +43,22 @@ export default function HabitDetailScreen() {
     fallbackRoute: '/habits',
   });
 
+  const [activeTab, setActiveTab] = useState<TabType>('statistics');
   const [habit, setHabit] = useState<HabitItemV3 | null>(null);
-  const [stats, setStats] = useState<HabitStats | null>(null);
   const [completions, setCompletions] = useState<Record<string, HabitStatus>>({});
   const [selectedDate, setSelectedDate] = useState<string>(() =>
     formatLocalDateString(new Date())
   );
   const [loading, setLoading] = useState(true);
-  const [verifierModalOpen, setVerifierModalOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!id) return;
     try {
-      const [h, s, compMap] = await Promise.all([
+      const [h, compMap] = await Promise.all([
         getHabitById(id),
-        getHabitStats(id),
         getHabitCompletionsMap(id, new Date().getFullYear(), new Date().getMonth() + 1),
       ]);
       setHabit(h);
-      setStats(s);
       setCompletions(compMap);
     } finally {
       setLoading(false);
@@ -68,6 +68,33 @@ export default function HabitDetailScreen() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // Comprehensive analytics calculation
+  const stats: HabitDetailedStatsResult = useMemo(() => {
+    if (!habit) {
+      return {
+        totalDays: 1,
+        completedCount: 0,
+        notCompletedCount: 0,
+        missedCount: 0,
+        completionRate: 0,
+        failureRate: 0,
+        missedRate: 0,
+        habitScore: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        thisWeek: 0,
+        thisMonth: 0,
+        thisYear: 0,
+      };
+    }
+    return calculateHabitComprehensiveStats(completions, {
+      createdAt: habit.createdAt,
+      schedule: habit.schedule,
+      restDays: habit.restDays,
+      longestStreak: habit.longestStreak,
+    });
+  }, [habit, completions]);
 
   const handleCycleDateStatus = async (dateStr: string) => {
     if (!id) return;
@@ -82,12 +109,9 @@ export default function HabitDetailScreen() {
 
     setCompletions((prev) => ({ ...prev, [dateStr]: next }));
 
-    // Execute SQLite cycle and reload fresh stats
+    // Execute SQLite cycle and reload fresh data
     const res = await cycleHabitStatus(id, dateStr);
     setCompletions((prev) => ({ ...prev, [dateStr]: res.newStatus }));
-
-    const updatedStats = await getHabitStats(id);
-    setStats(updatedStats);
 
     const updatedHabit = await getHabitById(id);
     setHabit(updatedHabit);
@@ -95,17 +119,9 @@ export default function HabitDetailScreen() {
     notifyLifeOSChanged();
   };
 
-  const handleVerifierSelected = async (
-    type: VerifierType,
-    verifierId?: string | null,
-    verifierEmail?: string | null
-  ) => {
+  const handleUpdateHabit = async (updates: Partial<HabitItemV3>) => {
     if (!id) return;
-    await updateHabit(id, {
-      verifierType: type,
-      verifierId: verifierId ?? null,
-      verifierEmail: verifierEmail ?? null,
-    });
+    await updateHabit(id, updates);
     await loadData();
     notifyLifeOSChanged();
   };
@@ -114,7 +130,7 @@ export default function HabitDetailScreen() {
     if (!id) return;
     Alert.alert(
       'Delete Habit',
-      'Are you sure you want to delete this habit and all its history?',
+      'Are you sure you want to delete this habit and all its completion history?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -131,7 +147,12 @@ export default function HabitDetailScreen() {
     );
   };
 
-  if (loading || !habit || !stats) {
+  const handleTabChange = (tab: TabType) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveTab(tab);
+  };
+
+  if (loading || !habit) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centerContainer}>
@@ -144,99 +165,98 @@ export default function HabitDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
+      {/* Top Header Bar */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={handleSmartBack}>
           <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
         </TouchableOpacity>
-        <View style={{ flex: 1, marginHorizontal: 12 }}>
-          <Text style={styles.headerBadge}>{habit.category.toUpperCase()} HABIT</Text>
+
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerCategory}>{habit.category.toUpperCase()} HABIT</Text>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {habit.title}
           </Text>
         </View>
+
         <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
           <Ionicons name="trash-outline" size={20} color="#EF4444" />
         </TouchableOpacity>
       </View>
 
+      {/* Top 3-Segment Tab Bar: [Calendar] [Statistics] [Edit] */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'calendar' && styles.tabItemActive]}
+          onPress={() => handleTabChange('calendar')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="calendar-outline"
+            size={16}
+            color={activeTab === 'calendar' ? '#070A11' : '#94A3B8'}
+          />
+          <Text style={[styles.tabLabel, activeTab === 'calendar' && styles.tabLabelActive]}>
+            Calendar
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'statistics' && styles.tabItemActive]}
+          onPress={() => handleTabChange('statistics')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="bar-chart-outline"
+            size={16}
+            color={activeTab === 'statistics' ? '#070A11' : '#94A3B8'}
+          />
+          <Text style={[styles.tabLabel, activeTab === 'statistics' && styles.tabLabelActive]}>
+            Statistics
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'edit' && styles.tabItemActive]}
+          onPress={() => handleTabChange('edit')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="create-outline"
+            size={16}
+            color={activeTab === 'edit' ? '#070A11' : '#94A3B8'}
+          />
+          <Text style={[styles.tabLabel, activeTab === 'edit' && styles.tabLabelActive]}>
+            Edit
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Main Tab Content */}
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Habit Meta Card */}
-        <View style={styles.metaCard}>
-          <View style={styles.metaRow}>
-            <View style={[styles.iconCircle, { backgroundColor: `${habit.color}20` }]}>
-              <Ionicons name={habit.icon as any} size={22} color={habit.color} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.habitTitle}>{habit.title}</Text>
-              {habit.description ? (
-                <Text style={styles.habitDesc}>{habit.description}</Text>
-              ) : null}
-            </View>
-          </View>
+        {activeTab === 'calendar' && (
+          <HabitCalendarView
+            completions={completions}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onCycleDateStatus={handleCycleDateStatus}
+            createdAt={habit.createdAt}
+            schedule={habit.schedule}
+            restDays={habit.restDays}
+          />
+        )}
 
-          {/* Verifier Badge / Change Button */}
-          <TouchableOpacity
-            style={styles.verifierRow}
-            onPress={() => setVerifierModalOpen(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.verifierInfo}>
-              <Ionicons
-                name={habit.verifierType === 'self' ? 'shield-outline' : 'people'}
-                size={16}
-                color={habit.verifierType === 'self' ? '#64748B' : '#00E699'}
-              />
-              <Text style={styles.verifierText}>
-                Verifier:{' '}
-                <Text style={{ fontWeight: '700', color: '#F8FAFC' }}>
-                  {habit.verifierType.toUpperCase()}
-                  {habit.verifierEmail ? ` (${habit.verifierEmail})` : ''}
-                </Text>
-              </Text>
-            </View>
-            <Text style={styles.changeVerifierText}>Change</Text>
-          </TouchableOpacity>
-        </View>
+        {activeTab === 'statistics' && (
+          <HabitStatisticsView stats={stats} completions={completions} />
+        )}
 
-        {/* Streaks & Challenge Card */}
-        <HabitStreakCard stats={stats} targetDays={habit.challengeTargetDays} />
-
-        {/* Calendar Heatmap Matrix */}
-        <Text style={styles.sectionHeader}>COMPLETION MATRIX & HEATMAP</Text>
-        <HabitCalendarMatrix
-          completions={completions}
-          selectedDate={selectedDate}
-          onCycleDateStatus={handleCycleDateStatus}
-          onSelectDate={(date) => setSelectedDate(date)}
-          restDays={habit.restDays}
-          createdAt={habit.createdAt}
-          schedule={habit.schedule}
-          title={habit.title}
-          currentStreak={stats?.currentStreak || habit.streak}
-        />
-
-        {/* Rewards Info */}
-        <View style={styles.rewardsCard}>
-          <View style={styles.rewardItem}>
-            <Ionicons name="flash" size={18} color="#00E699" />
-            <Text style={styles.rewardText}>+{habit.xpReward} XP per day</Text>
-          </View>
-          <View style={styles.rewardItem}>
-            <Ionicons name="logo-usd" size={18} color="#F59E0B" />
-            <Text style={styles.rewardText}>+{habit.coinReward} Coins per day</Text>
-          </View>
-        </View>
+        {activeTab === 'edit' && (
+          <HabitEditView
+            habit={habit}
+            onSave={handleUpdateHabit}
+            onDelete={handleDelete}
+          />
+        )}
       </ScrollView>
-
-      {/* Verifier Modal */}
-      <VerifierSelectModal
-        visible={verifierModalOpen}
-        currentType={habit.verifierType}
-        currentVerifierId={habit.verifierId}
-        onClose={() => setVerifierModalOpen(false)}
-        onSelect={handleVerifierSelected}
-      />
     </SafeAreaView>
   );
 }
@@ -262,7 +282,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerBadge: {
+  headerTitleContainer: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  headerCategory: {
     fontSize: 10,
     fontWeight: '800',
     color: '#00E699',
@@ -281,6 +305,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#0F172A',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    borderRadius: 14,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  tabItemActive: {
+    backgroundColor: '#00E699',
+  },
+  tabLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  tabLabelActive: {
+    color: '#070A11',
+    fontWeight: '800',
+  },
+  scroll: {
+    padding: 16,
+  },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
@@ -290,87 +349,5 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: '#94A3B8',
-  },
-  scroll: {
-    padding: 16,
-  },
-  metaCard: {
-    backgroundColor: '#0F1829',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    marginBottom: 16,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  habitTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#F8FAFC',
-  },
-  habitDesc: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  verifierRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  verifierInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  verifierText: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  changeVerifierText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#818CF8',
-  },
-  sectionHeader: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#64748B',
-    marginBottom: 10,
-    letterSpacing: 1,
-  },
-  rewardsCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#0F1829',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  rewardItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  rewardText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#F8FAFC',
   },
 });

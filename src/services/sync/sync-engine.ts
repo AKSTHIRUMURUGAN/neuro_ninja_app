@@ -355,6 +355,28 @@ class SyncEngine {
         const method = item.action === 'DELETE' ? 'DELETE' : 'POST';
 
         switch (item.entity_type) {
+          case 'habit_completion': {
+            const res = await fetch(`${apiUrl}/api/habits/${payload.habitId}/update-completion`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                date: payload.date,
+                state: payload.status,
+                confirmForfeit: true,
+              }),
+            });
+            if (res.ok || res.status === 404) {
+              await db.runAsync('DELETE FROM sync_outbox WHERE outbox_id = ?', item.outbox_id);
+              successCount++;
+            } else {
+              await db.runAsync(
+                "UPDATE sync_outbox SET attempts = attempts + 1, last_error = ? WHERE outbox_id = ?",
+                `HTTP ${res.status}`,
+                item.outbox_id
+              );
+            }
+            continue;
+          }
           case 'habit':
             endpoint = `${apiUrl}/api/habits`;
             break;
@@ -487,6 +509,40 @@ class SyncEngine {
                 h.createdAt || new Date().toISOString(),
               ]
             );
+
+            // Fetch completions for this habit
+            try {
+              const compRes = await fetch(`${apiUrl}/api/habits/${hId}/completions?limit=100`, { headers });
+              if (compRes.ok) {
+                const compData = await compRes.json();
+                if (Array.isArray(compData)) {
+                  for (const c of compData) {
+                    if (!c.date) continue;
+                    const dateStr = typeof c.date === 'string' ? c.date.split('T')[0] : '';
+                    if (!dateStr) continue;
+                    const status = c.status || (c.completed ? 'completed' : 'not_attempted');
+                    if (status === 'not_attempted') {
+                      await db.runAsync('DELETE FROM habit_checkins WHERE habit_id = ? AND date = ?', hId, dateStr);
+                    } else {
+                      await db.runAsync(
+                        `INSERT INTO habit_checkins (checkin_id, habit_id, date, status, notes)
+                         VALUES (?, ?, ?, ?, ?)
+                         ON CONFLICT(habit_id, date) DO UPDATE SET
+                           status = excluded.status,
+                           notes = excluded.notes`,
+                        `chk_${hId}_${dateStr}`,
+                        hId,
+                        dateStr,
+                        status,
+                        c.notes || null
+                      );
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Ignore single habit completions network errors
+            }
           }
         }
       }

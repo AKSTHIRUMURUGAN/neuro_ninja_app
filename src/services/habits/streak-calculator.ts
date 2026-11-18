@@ -257,3 +257,203 @@ export function computeHabitStreaksAndStats(
     weeklyAdherence,
   };
 }
+
+export interface ChartDataItem {
+  label: string;
+  completions: number;
+  maxDays: number;
+}
+
+export interface HabitDetailedStatsResult {
+  totalDays: number;
+  completedCount: number;
+  notCompletedCount: number;
+  missedCount: number;
+  completionRate: number;
+  failureRate: number;
+  missedRate: number;
+  habitScore: number;
+  currentStreak: number;
+  bestStreak: number;
+  thisWeek: number;
+  thisMonth: number;
+  thisYear: number;
+}
+
+export function calculateHabitComprehensiveStats(
+  completions: Record<string, HabitStatus>,
+  habit: {
+    createdAt?: string;
+    schedule?: HabitScheduleConfig;
+    restDays?: number[];
+    longestStreak?: number;
+  }
+): HabitDetailedStatsResult {
+  const today = new Date();
+  const todayKey = formatLocalDateString(today);
+  const createdDate = habit.createdAt ? parseLocalDateSafe(habit.createdAt.split('T')[0]) : new Date(today.getFullYear(), 0, 1);
+  
+  // Calculate day difference between createdDate and today
+  const diffTime = today.getTime() - createdDate.getTime();
+  const daySpan = Math.max(1, Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1);
+
+  let completedCount = 0;
+  let notCompletedCount = 0;
+  let missedCount = 0;
+  let thisWeek = 0;
+  let thisMonth = 0;
+  let thisYear = 0;
+
+  const currentYearNum = today.getFullYear();
+  const currentMonthNum = today.getMonth();
+
+  // Start of current week (Sunday)
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  // Traverse all dates from createdDate up to today
+  for (let d = new Date(createdDate); d <= today; d.setDate(d.getDate() + 1)) {
+    const key = formatLocalDateString(d);
+    const status = completions[key] || 'not_attempted';
+    const isScheduled = isHabitScheduledForDate(habit, key);
+
+    if (status === 'completed' || status === 'recovered') {
+      completedCount++;
+      const dTime = d.getTime();
+      if (dTime >= startOfWeek.getTime()) {
+        thisWeek++;
+      }
+      if (d.getFullYear() === currentYearNum && d.getMonth() === currentMonthNum) {
+        thisMonth++;
+      }
+      if (d.getFullYear() === currentYearNum) {
+        thisYear++;
+      }
+    } else if (status === 'not_completed') {
+      notCompletedCount++;
+    } else {
+      // not_attempted: if it was in the past and scheduled, count as missed
+      if (key < todayKey && isScheduled) {
+        missedCount++;
+      }
+    }
+  }
+
+  // Total days tracked
+  const totalDays = Math.max(daySpan, completedCount + notCompletedCount + missedCount, 1);
+  const completionRate = Math.min(100, Math.round((completedCount / totalDays) * 100));
+  const failureRate = Math.min(100, Math.round((notCompletedCount / totalDays) * 100));
+  const missedRate = Math.max(0, 100 - completionRate - failureRate);
+
+  // Streak calculations
+  const basicStats = computeHabitStreaksAndStats(
+    Object.entries(completions).map(([date, status]) => ({ date, status })),
+    habit.restDays,
+    habit.createdAt,
+    habit.schedule
+  );
+
+  const bestStreak = Math.max(basicStats.longestStreak, habit.longestStreak || 0, basicStats.currentStreak);
+  const habitScore = completionRate; // 0-100 score
+
+  return {
+    totalDays,
+    completedCount,
+    notCompletedCount,
+    missedCount,
+    completionRate,
+    failureRate,
+    missedRate,
+    habitScore,
+    currentStreak: basicStats.currentStreak,
+    bestStreak,
+    thisWeek,
+    thisMonth,
+    thisYear,
+  };
+}
+
+export function getHabitMonthlyCompletions(
+  completions: Record<string, HabitStatus>,
+  year: number
+): ChartDataItem[] {
+  const result: ChartDataItem[] = [];
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  for (let m = 0; m < 12; m++) {
+    const maxDays = new Date(year, m + 1, 0).getDate();
+    let count = 0;
+    for (let day = 1; day <= maxDays; day++) {
+      const key = `${year}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const status = completions[key];
+      if (status === 'completed' || status === 'recovered') {
+        count++;
+      }
+    }
+    result.push({
+      label: monthLabels[m],
+      completions: count,
+      maxDays,
+    });
+  }
+  return result;
+}
+
+export function getHabitWeeklyCompletions(
+  completions: Record<string, HabitStatus>
+): ChartDataItem[] {
+  const result: ChartDataItem[] = [];
+  const now = new Date();
+
+  for (let i = 6; i >= 0; i--) {
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - i * 7 - now.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+
+    let count = 0;
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + dayOffset);
+      const key = formatLocalDateString(d);
+      const status = completions[key];
+      if (status === 'completed' || status === 'recovered') {
+        count++;
+      }
+    }
+
+    result.push({
+      label: i === 0 ? 'This Wk' : `${i}w ago`,
+      completions: count,
+      maxDays: 7,
+    });
+  }
+  return result;
+}
+
+export function getHabitYearlyCompletions(
+  completions: Record<string, HabitStatus>
+): ChartDataItem[] {
+  const result: ChartDataItem[] = [];
+  const currentYear = new Date().getFullYear();
+
+  for (let i = 4; i >= 0; i--) {
+    const year = currentYear - i;
+    const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const maxDays = isLeap ? 366 : 365;
+
+    let count = 0;
+    Object.entries(completions).forEach(([dateStr, status]) => {
+      if ((status === 'completed' || status === 'recovered') && dateStr.startsWith(`${year}-`)) {
+        count++;
+      }
+    });
+
+    result.push({
+      label: String(year),
+      completions: count,
+      maxDays,
+    });
+  }
+  return result;
+}
