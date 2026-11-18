@@ -1,6 +1,6 @@
 import type * as SQLite from 'expo-sqlite';
 
-export const CURRENT_DB_VERSION = 6;
+export const CURRENT_DB_VERSION = 9;
 
 const SCHEMA_V1 = `
 PRAGMA journal_mode = WAL;
@@ -1105,6 +1105,179 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     `);
 
     await db.execAsync('PRAGMA user_version = 8');
+  }
+
+  if (currentVersion < 9) {
+    // V9: Complete Web-to-Mobile Parity Neuro Finance Engine
+    // Custom Categories, Persona Family Members, V2 Transactions, Salaries, EMIs, Investments, Net Worth Items, Goals & Profiles
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS finance_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        icon_type TEXT NOT NULL DEFAULT 'emoji',
+        icon_value TEXT NOT NULL,
+        group_name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        budget_limit REAL,
+        is_system INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_members (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        relationship TEXT NOT NULL,
+        avatar_emoji TEXT,
+        avatar_type TEXT DEFAULT 'emoji',
+        avatar_url TEXT,
+        icon_name TEXT,
+        color TEXT NOT NULL,
+        is_custom INTEGER NOT NULL DEFAULT 0,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_transactions_v2 (
+        id TEXT PRIMARY KEY,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL,
+        category TEXT NOT NULL,
+        category_group TEXT,
+        spent_on TEXT NOT NULL DEFAULT 'personal',
+        payment_method TEXT NOT NULL DEFAULT 'upi',
+        date TEXT NOT NULL,
+        description TEXT,
+        linked_goal_id TEXT,
+        tags_json TEXT,
+        is_recurring INTEGER NOT NULL DEFAULT 0,
+        receipt_url TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'synced'
+      );
+      CREATE INDEX IF NOT EXISTS idx_fin_tx2_date ON finance_transactions_v2(date);
+      CREATE INDEX IF NOT EXISTS idx_fin_tx2_group ON finance_transactions_v2(category_group);
+      CREATE INDEX IF NOT EXISTS idx_fin_tx2_spent_on ON finance_transactions_v2(spent_on);
+      CREATE INDEX IF NOT EXISTS idx_fin_tx2_type ON finance_transactions_v2(type);
+
+      CREATE TABLE IF NOT EXISTS finance_salaries_v2 (
+        id TEXT PRIMARY KEY,
+        person_name TEXT NOT NULL,
+        gross_salary REAL NOT NULL,
+        basic_pay REAL NOT NULL DEFAULT 0,
+        hra REAL NOT NULL DEFAULT 0,
+        special_allowance REAL NOT NULL DEFAULT 0,
+        deductions_json TEXT NOT NULL,
+        net_in_hand REAL NOT NULL,
+        pay_day INTEGER NOT NULL DEFAULT 1,
+        side_incomes_json TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_emis_v2 (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        obligation_type TEXT NOT NULL,
+        loan_type TEXT NOT NULL,
+        principal REAL NOT NULL,
+        current_balance REAL NOT NULL,
+        interest_rate REAL NOT NULL,
+        monthly_emi REAL NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        tenure_months INTEGER NOT NULL,
+        paid_installments INTEGER NOT NULL DEFAULT 0,
+        due_day INTEGER NOT NULL DEFAULT 5,
+        lender TEXT NOT NULL,
+        borrowed_from TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_investments_v2 (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        invested_amount REAL NOT NULL,
+        current_value REAL NOT NULL,
+        sip_amount REAL,
+        sip_date INTEGER,
+        folio_or_account TEXT,
+        notes TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_networth_items_v2 (
+        id TEXT PRIMARY KEY,
+        item_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount REAL NOT NULL,
+        notes TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_goals_v2 (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        target_amount REAL NOT NULL,
+        current_amount REAL NOT NULL DEFAULT 0,
+        target_date TEXT NOT NULL,
+        category TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'medium',
+        icon TEXT NOT NULL DEFAULT 'flag',
+        color TEXT NOT NULL DEFAULT '#00E699',
+        is_completed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_profile_v2 (
+        id TEXT PRIMARY KEY,
+        currency_symbol TEXT NOT NULL DEFAULT '₹',
+        monthly_budget REAL NOT NULL DEFAULT 25000,
+        emergency_fund_target REAL NOT NULL DEFAULT 150000,
+        monthly_savings_goal REAL NOT NULL DEFAULT 10000,
+        desired_emergency_months INTEGER NOT NULL DEFAULT 6,
+        fire_annual_expense REAL NOT NULL DEFAULT 600000,
+        fire_swr_percent REAL NOT NULL DEFAULT 4.0,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    // Seed default categories
+    await db.execAsync(`
+      INSERT OR IGNORE INTO finance_categories (id, name, icon_type, icon_value, group_name, color, budget_limit, is_system, created_at) VALUES
+      ('Food & Dining', 'Food & Dining', 'emoji', '🍔', 'personal', '#F59E0B', 6000, 1, datetime('now')),
+      ('Transportation', 'Transportation', 'emoji', '🚗', 'personal', '#38BDF8', 3000, 1, datetime('now')),
+      ('Shopping', 'Shopping', 'emoji', '🛍️', 'personal', '#EC4899', 4000, 1, datetime('now')),
+      ('Entertainment', 'Entertainment', 'emoji', '🎮', 'personal', '#A855F7', 2000, 1, datetime('now')),
+      ('Bills & Utilities', 'Bills & Utilities', 'emoji', '💡', 'household', '#F43F5E', 4000, 1, datetime('now')),
+      ('Healthcare', 'Healthcare', 'emoji', '🏥', 'personal', '#10B981', 3000, 1, datetime('now')),
+      ('Education', 'Education', 'emoji', '📚', 'personal', '#06B6D4', 2500, 1, datetime('now')),
+      ('House Rent', 'House Rent', 'emoji', '🏠', 'household', '#F59E0B', 15000, 1, datetime('now')),
+      ('SIP & Mutual Funds', 'SIP & Mutual Funds', 'emoji', '📊', 'investments', '#10B981', 10000, 1, datetime('now')),
+      ('Income', 'Income', 'emoji', '💰', 'other', '#10B981', NULL, 1, datetime('now')),
+      ('Other', 'Other', 'emoji', '📌', 'other', '#64748B', 2000, 1, datetime('now'));
+    `);
+
+    // Seed default family members / personas
+    await db.execAsync(`
+      INSERT OR IGNORE INTO finance_members (id, name, relationship, avatar_emoji, avatar_type, color, is_custom, is_default, created_at) VALUES
+      ('personal', 'Self', 'self', '👤', 'emoji', '#38BDF8', 0, 1, datetime('now')),
+      ('parents', 'Parents / Elders', 'father', '👨‍👩‍👧', 'emoji', '#F43F5E', 0, 1, datetime('now')),
+      ('family', 'Family Combined', 'family', '🏠', 'emoji', '#F59E0B', 0, 1, datetime('now')),
+      ('child', 'Child / Kids', 'child', '👶', 'emoji', '#10B981', 0, 1, datetime('now')),
+      ('spouse', 'Spouse / Partner', 'spouse', '💍', 'emoji', '#A855F7', 0, 1, datetime('now')),
+      ('office', 'Office / Business', 'office', '💼', 'emoji', '#6366F1', 0, 1, datetime('now'));
+    `);
+
+    // Seed default profile
+    await db.execAsync(`
+      INSERT OR IGNORE INTO finance_profile_v2 (id, currency_symbol, monthly_budget, emergency_fund_target, monthly_savings_goal, desired_emergency_months, fire_annual_expense, fire_swr_percent, updated_at) VALUES
+      ('current', '₹', 25000, 150000, 10000, 6, 600000, 4.0, datetime('now'));
+    `);
+
+    await db.execAsync('PRAGMA user_version = 9');
   }
 }
 
