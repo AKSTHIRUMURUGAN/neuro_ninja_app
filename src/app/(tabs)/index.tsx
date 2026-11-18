@@ -7,10 +7,11 @@ import {
   ScrollView,
   Platform,
   Image,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import { useNinja } from '../../context/ninja-context';
 import { useNinjaAlert } from '../../context/ninja-alert-context';
@@ -29,6 +30,19 @@ export default function DojoScreen() {
     toggleShield,
     relockNow,
   } = useNinja();
+
+  // Android hardware back & edge swipe back from Dojo root ALWAYS returns to Ghost Launcher
+  useFocusEffect(
+    React.useCallback(() => {
+      if (Platform.OS !== 'android') return;
+      const onBackPress = () => {
+        router.replace('/focus/ghost-launcher' as any);
+        return true;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => sub.remove();
+    }, [router])
+  );
 
   const handleSealNow = async () => {
     await relockNow();
@@ -91,8 +105,10 @@ export default function DojoScreen() {
               style={styles.launcherBackPill}
               onPress={() => router.replace('/focus/ghost-launcher' as any)}
               activeOpacity={0.7}
+              accessibilityLabel="Back to Ghost Launcher"
             >
-              <MaterialCommunityIcons name="ghost" size={16} color={NinjaPalette.emerald} />
+              <Ionicons name="arrow-back" size={13} color={NinjaPalette.emerald} />
+              <MaterialCommunityIcons name="ghost" size={15} color={NinjaPalette.emerald} />
               <Text style={styles.launcherBackText}>Launcher</Text>
             </TouchableOpacity>
 

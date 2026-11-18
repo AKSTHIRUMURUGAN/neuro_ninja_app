@@ -6,7 +6,11 @@ export interface ParentalConfig {
   curfewEndTime: string; // e.g. "06:30"
   dailyTotalQuotaMinutes: number;
   strictCurfewActive: boolean;
+  biometricsEnabled: boolean;
   emergencyContacts: string[];
+  securityQuestion: string;
+  securityAnswerHash: string;
+  guardianPairingKey: string;
   updatedAt: string;
 }
 
@@ -15,12 +19,25 @@ export interface AppQuota {
   appName: string;
   dailyLimitMinutes: number;
   isCurfewBlocked: boolean;
+  usedMinutesToday?: number;
 }
 
 export interface ParentalAuditLog {
   id: string;
-  eventType: 'curfew_block' | 'quota_exceeded' | 'parent_override' | 'settings_tamper_attempt';
+  eventType:
+    | 'curfew_block'
+    | 'quota_exceeded'
+    | 'parent_override'
+    | 'settings_tamper_attempt'
+    | 'biometric_unlock'
+    | 'emergency_pass_granted';
   packageName?: string;
   details: string;
   createdAt: string;
+}
+
+export interface EmergencyPassResult {
+  success: boolean;
+  message: string;
+  durationMinutes: number;
 }

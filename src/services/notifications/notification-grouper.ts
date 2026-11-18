@@ -115,21 +115,56 @@ export function deduplicateNotifications(
   const map = new Map<string, SuppressedNotification>();
 
   for (const n of notifications) {
-    const pkg = n.packageName || '';
-    const title = (n.title || '').trim();
-    const body = (n.body || '').trim();
+    const pkg = (n.packageName || '').trim().toLowerCase();
+    const title = (n.title || '')
+      .normalize('NFKD')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .toLowerCase();
+    const body = (n.body || '')
+      .normalize('NFKD')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .toLowerCase();
+
+    // Primary exact content signature
     const sig = `${pkg}:::${title}:::${body}`;
-    const id = n.id || sig;
+    const id = n.id ? String(n.id).trim() : '';
 
-    const key = sig.length > 5 ? sig : id;
-    const existing = map.get(key);
+    // Prefer content signature if non-trivial, otherwise fallback to id
+    const primaryKey = sig.length > 5 ? sig : id;
 
-    if (!existing || (n.postTime || 0) > (existing.postTime || 0)) {
-      map.set(key, n);
+    const existing = map.get(primaryKey);
+
+    if (!existing || (n.postTime || 0) >= (existing.postTime || 0)) {
+      map.set(primaryKey, n);
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => (b.postTime || 0) - (a.postTime || 0));
+  // Second pass: if two notifications from same package have identical title and post times within 120 seconds, keep newest
+  const dedupedList = Array.from(map.values()).sort((a, b) => (b.postTime || 0) - (a.postTime || 0));
+  const finalCleaned: SuppressedNotification[] = [];
+  const secondaryMap = new Map<string, SuppressedNotification>();
+
+  for (const item of dedupedList) {
+    const pkg = (item.packageName || '').trim().toLowerCase();
+    const title = (item.title || '')
+      .normalize('NFKD')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .toLowerCase();
+
+    // Group near-duplicate alerts from same app with same title within 5 minutes
+    const roundedTime = Math.floor((item.postTime || 0) / (5 * 60 * 1000));
+    const titleTimeKey = `${pkg}:::${title}:::${roundedTime}`;
+
+    if (!secondaryMap.has(titleTimeKey)) {
+      secondaryMap.set(titleTimeKey, item);
+      finalCleaned.push(item);
+    }
+  }
+
+  return finalCleaned.sort((a, b) => (b.postTime || 0) - (a.postTime || 0));
 }
 
 /**

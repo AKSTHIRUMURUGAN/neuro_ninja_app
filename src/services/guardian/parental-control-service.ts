@@ -1,3 +1,4 @@
+import * as LocalAuthentication from 'expo-local-authentication';
 import { getDatabase } from '../database/database';
 import {
   setCurfewConfig,
@@ -5,7 +6,12 @@ import {
   setParentalPinHash,
   getParentalPinHash,
 } from 'expo-app-blocker';
-import type { ParentalConfig, AppQuota, ParentalAuditLog } from './parental-types';
+import type {
+  ParentalConfig,
+  AppQuota,
+  ParentalAuditLog,
+  EmergencyPassResult,
+} from './parental-types';
 
 class ParentalControlService {
   /**
@@ -25,6 +31,27 @@ class ParentalControlService {
       updated_at: string;
     }>('SELECT * FROM parental_controls WHERE id = 1');
 
+    // Retrieve biometric toggle and security question from lifeos_state
+    const bioRow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'parental_biometrics_enabled'"
+    );
+    const biometricsEnabled = bioRow?.value_json === '1';
+
+    const secQRow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'parental_security_q'"
+    );
+    const securityQuestion = secQRow?.value_json || 'What is your primary focus goal?';
+
+    const secARow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'parental_security_a'"
+    );
+    const securityAnswerHash = secARow?.value_json || 'focus';
+
+    const pairingRow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'guardian_pairing_key'"
+    );
+    const guardianPairingKey = pairingRow?.value_json || 'GUARD-7729';
+
     if (!row) {
       return {
         id: 1,
@@ -34,7 +61,11 @@ class ParentalControlService {
         curfewEndTime: '06:30',
         dailyTotalQuotaMinutes: 120,
         strictCurfewActive: true,
+        biometricsEnabled,
         emergencyContacts: ['100', '112'],
+        securityQuestion,
+        securityAnswerHash,
+        guardianPairingKey,
         updatedAt: new Date().toISOString(),
       };
     }
@@ -52,9 +83,42 @@ class ParentalControlService {
       curfewEndTime: row.curfew_end_time,
       dailyTotalQuotaMinutes: row.daily_total_quota_minutes,
       strictCurfewActive: row.strict_curfew_active === 1,
+      biometricsEnabled,
       emergencyContacts: contacts,
+      securityQuestion,
+      securityAnswerHash,
+      guardianPairingKey,
       updatedAt: row.updated_at,
     };
+  }
+
+  /**
+   * Biometric Authentication (FaceID / Fingerprint) via expo-local-authentication
+   */
+  async authenticateWithBiometrics(): Promise<boolean> {
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (!hasHardware || !isEnrolled) {
+        return false;
+      }
+
+      const res = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Unlock NeuroNinja Guardian Controls',
+        fallbackLabel: 'Use Master PIN',
+        cancelLabel: 'Cancel',
+        disableDeviceFallback: false,
+      });
+
+      if (res.success) {
+        await this.logAuditEvent('biometric_unlock', undefined, 'Parental controls unlocked via Biometrics');
+      }
+      return res.success;
+    } catch (e) {
+      console.warn('[ParentalControlService] Biometric auth error:', e);
+      return false;
+    }
   }
 
   /**
@@ -62,10 +126,15 @@ class ParentalControlService {
    */
   async verifyParentPin(enteredPin: string): Promise<boolean> {
     const config = await this.getConfig();
-    const nativeHash = getParentalPinHash();
-    const valid = enteredPin.trim() === config.pinHash || enteredPin.trim() === nativeHash;
+    let nativeHash = '';
+    try {
+      nativeHash = getParentalPinHash();
+    } catch {}
+
+    const clean = enteredPin.trim();
+    const valid = clean === config.pinHash || clean === nativeHash;
     if (!valid) {
-      await this.logAuditEvent('settings_tamper_attempt', undefined, 'Invalid master PIN entered');
+      await this.logAuditEvent('settings_tamper_attempt', undefined, 'Invalid master PIN attempt recorded');
     }
     return valid;
   }
@@ -83,8 +152,63 @@ class ParentalControlService {
       [cleanPin, now]
     );
 
-    setParentalPinHash(cleanPin);
+    try {
+      setParentalPinHash(cleanPin);
+    } catch {}
+
     await this.logAuditEvent('parent_override', undefined, 'Master Parent PIN was updated');
+  }
+
+  /**
+   * Update biometric enablement
+   */
+  async updateBiometrics(enabled: boolean): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    await db.runAsync(
+      "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('parental_biometrics_enabled', ?, ?)",
+      [enabled ? '1' : '0', now]
+    );
+  }
+
+  /**
+   * Generate today's deterministic 4-digit Emergency Override Code
+   */
+  async getEmergencyOverrideCode(): Promise<string> {
+    const config = await this.getConfig();
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const seed = today + '_GUARDIAN_' + config.pinHash;
+
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash << 5) - hash + seed.charCodeAt(i);
+      hash |= 0;
+    }
+
+    const codeNum = Math.abs(hash % 9000) + 1000;
+    return codeNum.toString();
+  }
+
+  /**
+   * Redeem a 15-minute emergency focus pass using the parent's daily emergency override code
+   */
+  async redeemEmergencyPass(enteredCode: string): Promise<EmergencyPassResult> {
+    const expected = await this.getEmergencyOverrideCode();
+    if (enteredCode.trim() !== expected) {
+      await this.logAuditEvent('settings_tamper_attempt', undefined, 'Invalid emergency override code attempt');
+      return {
+        success: false,
+        message: 'Invalid emergency code. Request the current 4-digit daily code from your guardian.',
+        durationMinutes: 0,
+      };
+    }
+
+    await this.logAuditEvent('emergency_pass_granted', undefined, '15-minute emergency pass granted via Daily Code');
+    return {
+      success: true,
+      message: 'Emergency pass validated! 15 minutes of unlocked focus granted.',
+      durationMinutes: 15,
+    };
   }
 
   /**
@@ -113,7 +237,9 @@ class ParentalControlService {
     const endMinutes = endH * 60 + endM;
 
     // Enforce in native SharedPreferences
-    setCurfewConfig(enabled, startMinutes, endMinutes, strict);
+    try {
+      setCurfewConfig(enabled, startMinutes, endMinutes, strict);
+    } catch {}
 
     await this.logAuditEvent(
       'parent_override',
@@ -178,50 +304,58 @@ class ParentalControlService {
   }
 
   /**
-   * Delete an app quota
+   * Remove an app quota
    */
-  async deleteAppQuota(packageName: string): Promise<void> {
+  async removeAppQuota(packageName: string): Promise<void> {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM app_quotas WHERE package_name = ?', [packageName]);
+    await this.logAuditEvent('parent_override', packageName, `Removed quota for ${packageName}`);
+  }
+
+  async deleteAppQuota(packageName: string): Promise<void> {
+    return this.removeAppQuota(packageName);
   }
 
   /**
-   * Log an audit event
+   * Log parental security audit event
    */
   async logAuditEvent(
     eventType: ParentalAuditLog['eventType'],
     packageName?: string,
-    details = ''
+    details: string = ''
   ): Promise<void> {
-    const db = await getDatabase();
-    const id = 'audit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    const now = new Date().toISOString();
+    try {
+      const db = await getDatabase();
+      const id = 'audit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      const now = new Date().toISOString();
 
-    await db.runAsync(
-      `INSERT INTO parental_audit_logs (id, event_type, package_name, details, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, eventType, packageName ?? null, details, now]
-    );
+      await db.runAsync(
+        'INSERT INTO parental_audit_logs (id, event_type, package_name, details, created_at) VALUES (?, ?, ?, ?, ?)',
+        [id, eventType, packageName ?? null, details, now]
+      );
+    } catch (e) {
+      console.warn('[ParentalControlService] Audit log error:', e);
+    }
   }
 
   /**
-   * Get recent parental audit logs
+   * Retrieve recent security audit events
    */
-  async getAuditLogs(limit = 30): Promise<ParentalAuditLog[]> {
+  async getAuditLogs(limit: number = 30): Promise<ParentalAuditLog[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{
       id: string;
       event_type: string;
       package_name: string | null;
-      details: string;
+      details: string | null;
       created_at: string;
     }>('SELECT * FROM parental_audit_logs ORDER BY created_at DESC LIMIT ?', [limit]);
 
     return rows.map((r) => ({
       id: r.id,
-      eventType: r.event_type as any,
+      eventType: r.event_type as ParentalAuditLog['eventType'],
       packageName: r.package_name ?? undefined,
-      details: r.details,
+      details: r.details || '',
       createdAt: r.created_at,
     }));
   }

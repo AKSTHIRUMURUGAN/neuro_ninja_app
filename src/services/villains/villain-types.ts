@@ -1,6 +1,13 @@
 export type VillainType = 'daily' | 'weekly';
 export type VillainStatus = 'active' | 'defeated' | 'escaped';
-export type ActionSource = 'habit' | 'task' | 'pomodoro' | 'brain_game' | 'breach_penalty';
+export type ActionSource =
+  | 'habit'
+  | 'task'
+  | 'pomodoro'
+  | 'brain_game'
+  | 'breach_penalty'
+  | 'mindful_gate'
+  | 'vitality_log';
 
 export interface DailyVillain {
   id: string;
@@ -18,6 +25,7 @@ export interface DailyVillain {
   coinsBounty: number;
   xpBounty: number;
   lootItemId?: string;
+  isEnraged?: boolean;
   createdAt: string;
 }
 
@@ -37,7 +45,22 @@ export interface WeeklyVillain {
   coinsBounty: number;
   xpBounty: number;
   trophyTitle: string;
+  isEnraged?: boolean;
   createdAt: string;
+}
+
+export interface PlayerRpgProfile {
+  shieldHp: number;
+  maxShieldHp: number;
+  isShieldBroken: boolean;
+  equippedWeapon: {
+    name: string;
+    multiplier: number;
+    icon: string;
+  };
+  soulShards: number;
+  vanquishedDailyCount: number;
+  vanquishedWeeklyCount: number;
 }
 
 export interface CombatLog {
@@ -53,6 +76,7 @@ export interface CombatLog {
 
 export interface DamageResult {
   damageDealt: number;
+  weaponMultiplier: number;
   dailyDefeated: boolean;
   weeklyDefeated: boolean;
   dailyRemainingHp: number;

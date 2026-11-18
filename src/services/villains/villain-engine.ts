@@ -6,67 +6,137 @@ import type {
   CombatLog,
   ActionSource,
   DamageResult,
+  PlayerRpgProfile,
 } from './villain-types';
 
 const DAILY_BOSS_ROSTER = [
   {
-    name: 'Dopamine Demon',
-    title: 'Archon of Endless Feeds',
-    description: 'Feeds on fragmented focus and infinite mindless scrolling.',
-    avatarSymbol: 'fire',
+    name: 'Chronos the Time-Eater',
+    title: 'Archon of Infinite Reels',
+    description: 'Feeds on fragmented attention, short clips, and mindless doomscrolling.',
+    avatarSymbol: 'timer-sand-full',
     themeColor: '#EF4444',
     element: 'focus' as const,
     maxHp: 500,
-    coinsBounty: 150,
-    xpBounty: 350,
-  },
-  {
-    name: 'Shorts Spectre',
-    title: 'Phantom of Micro-Clips',
-    description: 'Entraps attention spans into 15-second addictive loops.',
-    avatarSymbol: 'flash',
-    themeColor: '#F59E0B',
-    element: 'mind' as const,
-    maxHp: 450,
-    coinsBounty: 140,
-    xpBounty: 320,
-  },
-  {
-    name: 'Procrastination Golem',
-    title: 'Titan of Tomorrow',
-    description: 'A heavy stony monster that whispers "do it later".',
-    avatarSymbol: 'shield-alert',
-    themeColor: '#6366F1',
-    element: 'discipline' as const,
-    maxHp: 600,
     coinsBounty: 180,
     xpBounty: 400,
   },
   {
-    name: 'Algorithm Siren',
-    title: 'Enchantress of Recommendations',
-    description: 'Calculates seductive notifications to break your flow state.',
+    name: 'Slothmor the Bed-Lurker',
+    title: 'Spectre of Low Energy',
+    description: 'Entraps willpower under heavy blankets and whispers "do it tomorrow".',
+    avatarSymbol: 'bed',
+    themeColor: '#8B5CF6',
+    element: 'vitality' as const,
+    maxHp: 450,
+    coinsBounty: 150,
+    xpBounty: 350,
+  },
+  {
+    name: 'Vortex the Distraction Hydra',
+    title: 'Multi-Tabbed Chimera',
+    description: 'Sprouts two new impulse heads every time you open a quick social notification.',
     avatarSymbol: 'creation',
     themeColor: '#EC4899',
-    element: 'focus' as const,
-    maxHp: 550,
-    coinsBounty: 160,
+    element: 'discipline' as const,
+    maxHp: 600,
+    coinsBounty: 200,
+    xpBounty: 450,
+  },
+  {
+    name: 'Siren of the Algorithmic Feed',
+    title: 'Enchantress of Dopamine Traps',
+    description: 'Calculates seductive notifications and micro-rewards to break your flow state.',
+    avatarSymbol: 'fire',
+    themeColor: '#F59E0B',
+    element: 'mind' as const,
+    maxHp: 520,
+    coinsBounty: 170,
     xpBounty: 380,
   },
   {
-    name: 'Sloth Serpent',
-    title: 'Coil of Low Energy',
-    description: 'Drains initiative, making workouts and deep reading feel impossible.',
-    avatarSymbol: 'snake',
-    themeColor: '#10B981',
-    element: 'vitality' as const,
-    maxHp: 500,
-    coinsBounty: 150,
-    xpBounty: 350,
+    name: 'Gorgon of Procrastination',
+    title: 'Titan of the Unstarted Task',
+    description: 'Turns urgent, meaningful projects into stone through fear and delay.',
+    avatarSymbol: 'shield-alert',
+    themeColor: '#3B82F6',
+    element: 'discipline' as const,
+    maxHp: 580,
+    coinsBounty: 190,
+    xpBounty: 420,
   },
 ];
 
 class VillainEngine {
+  /**
+   * Retrieves player RPG loadout, shield durability, and equippable weapon
+   */
+  async getPlayerRpgProfile(): Promise<PlayerRpgProfile> {
+    const db = await getDatabase();
+
+    // 1. Shield HP
+    const shieldRow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'player_shield_hp'"
+    );
+    const shieldHp = shieldRow ? parseInt(shieldRow.value_json, 10) : 100;
+
+    // 2. Soul shards
+    const shardRow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'player_soul_shards'"
+    );
+    const soulShards = shardRow ? parseInt(shardRow.value_json, 10) : 0;
+
+    // 3. Vanquished counts
+    const dailyCountRow = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM daily_villains WHERE status = 'defeated'"
+    );
+    const weeklyCountRow = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM weekly_villains WHERE status = 'defeated'"
+    );
+
+    // 4. Equipped weapon based on focus streak / achievements
+    const streakRow = await db.getFirstAsync<{ value_json: string }>(
+      "SELECT value_json FROM lifeos_state WHERE key = 'active_streak_days'"
+    );
+    const streakDays = streakRow ? parseInt(streakRow.value_json, 10) : 1;
+
+    let weapon = {
+      name: 'Bonsai Shinai',
+      multiplier: 1.0,
+      icon: 'sword',
+    };
+
+    if (streakDays >= 14) {
+      weapon = {
+        name: 'Muramasa of Pure Focus',
+        multiplier: 2.0,
+        icon: 'sword-cross',
+      };
+    } else if (streakDays >= 7) {
+      weapon = {
+        name: 'Titanium Flowblade',
+        multiplier: 1.5,
+        icon: 'lightning-bolt',
+      };
+    } else if (streakDays >= 3) {
+      weapon = {
+        name: 'Shadow Katana',
+        multiplier: 1.25,
+        icon: 'sword',
+      };
+    }
+
+    return {
+      shieldHp,
+      maxShieldHp: 100,
+      isShieldBroken: shieldHp <= 0,
+      equippedWeapon: weapon,
+      soulShards,
+      vanquishedDailyCount: dailyCountRow?.count || 0,
+      vanquishedWeeklyCount: weeklyCountRow?.count || 0,
+    };
+  }
+
   /**
    * Get active Daily Villain, auto-rotating if date changed
    */
@@ -103,7 +173,7 @@ class VillainEngine {
         `INSERT INTO daily_villains (
           id, name, title, description, avatar_symbol, theme_color, element,
           max_hp, current_hp, attack_power, status, day_date, coins_bounty, xp_bounty, loot_item_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 35, 'active', ?, ?, ?, 'shield_freeze', ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
         [
           id,
           template.name,
@@ -114,32 +184,23 @@ class VillainEngine {
           template.element,
           template.maxHp,
           template.maxHp,
+          35,
           today,
           template.coinsBounty,
           template.xpBounty,
+          'item_soul_shard',
           now,
         ]
       );
 
-      return {
-        id,
-        name: template.name,
-        title: template.title,
-        description: template.description,
-        avatarSymbol: template.avatarSymbol,
-        themeColor: template.themeColor,
-        element: template.element,
-        maxHp: template.maxHp,
-        currentHp: template.maxHp,
-        attackPower: 35,
-        status: 'active',
-        dayDate: today,
-        coinsBounty: template.coinsBounty,
-        xpBounty: template.xpBounty,
-        lootItemId: 'shield_freeze',
-        createdAt: now,
-      };
+      row = await db.getFirstAsync('SELECT * FROM daily_villains WHERE id = ?', [id]);
     }
+
+    if (!row) return null;
+
+    // Boss Enrage check: If local time >= 20:00 (8 PM) and boss is active
+    const currentHour = new Date().getHours();
+    const isEnraged = currentHour >= 20 && row.status === 'active';
 
     return {
       id: row.id,
@@ -147,16 +208,17 @@ class VillainEngine {
       title: row.title,
       description: row.description,
       avatarSymbol: row.avatar_symbol,
-      themeColor: row.theme_color,
+      themeColor: isEnraged ? '#EF4444' : row.theme_color,
       element: row.element as any,
       maxHp: row.max_hp,
       currentHp: row.current_hp,
-      attackPower: row.attack_power,
+      attackPower: isEnraged ? row.attack_power * 2 : row.attack_power,
       status: row.status as any,
       dayDate: row.day_date,
-      coinsBounty: row.coins_bounty,
-      xpBounty: row.xp_bounty,
+      coinsBounty: isEnraged ? row.coins_bounty * 2 : row.coins_bounty,
+      xpBounty: isEnraged ? row.xp_bounty * 2 : row.xp_bounty,
       lootItemId: row.loot_item_id ?? undefined,
+      isEnraged,
       createdAt: row.created_at,
     };
   }
@@ -166,7 +228,7 @@ class VillainEngine {
    */
   async getActiveWeeklyVillain(): Promise<WeeklyVillain | null> {
     const db = await getDatabase();
-    const row = await db.getFirstAsync<{
+    let row = await db.getFirstAsync<{
       id: string;
       name: string;
       title: string;
@@ -184,6 +246,36 @@ class VillainEngine {
       trophy_title: string;
       created_at: string;
     }>('SELECT * FROM weekly_villains ORDER BY created_at DESC LIMIT 1');
+
+    if (!row) {
+      const now = new Date();
+      const weekId = `${now.getFullYear()}-W${Math.ceil(now.getDate() / 7)}`;
+      const id = 'raid_' + weekId;
+
+      await db.runAsync(
+        `INSERT INTO weekly_villains (
+          id, name, title, description, avatar_symbol, theme_color, element,
+          max_hp, current_hp, phase, week_id, status, coins_bounty, xp_bounty, trophy_title, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'active', ?, ?, ?, ?)`,
+        [
+          id,
+          'Akuma the Flow Devourer',
+          'Colossus of Procrastination',
+          'Ancient multi-phase world boss feeding on abandoned resolutions.',
+          'skull',
+          '#DC2626',
+          'discipline',
+          2500,
+          2500,
+          weekId,
+          1000,
+          2500,
+          'Slayer of Akuma Trophy',
+          now.toISOString(),
+        ]
+      );
+      row = await db.getFirstAsync('SELECT * FROM weekly_villains WHERE id = ?', [id]);
+    }
 
     if (!row) return null;
 
@@ -208,16 +300,20 @@ class VillainEngine {
   }
 
   /**
-   * Deal real damage to active villains from productivity actions
+   * Deal real focus damage to active villains scaled by equipped weapon multiplier
    */
-  async dealDamage(source: ActionSource, amount: number, actionName: string): Promise<DamageResult> {
+  async dealDamage(source: ActionSource, baseAmount: number, actionName: string): Promise<DamageResult> {
     const db = await getDatabase();
     const now = new Date().toISOString();
 
-    const [daily, weekly] = await Promise.all([
+    const [player, daily, weekly] = await Promise.all([
+      this.getPlayerRpgProfile(),
       this.getActiveDailyVillain(),
       this.getActiveWeeklyVillain(),
     ]);
+
+    const weaponMultiplier = player.equippedWeapon.multiplier;
+    const finalDamage = Math.round(baseAmount * weaponMultiplier);
 
     let dailyDefeated = false;
     let weeklyDefeated = false;
@@ -228,7 +324,7 @@ class VillainEngine {
 
     // 1. Damage Daily Boss
     if (daily && daily.status === 'active') {
-      const nextHp = Math.max(0, daily.currentHp - amount);
+      const nextHp = Math.max(0, daily.currentHp - finalDamage);
       dailyRemaining = nextHp;
       const isDefeated = nextHp === 0;
 
@@ -241,12 +337,21 @@ class VillainEngine {
         dailyDefeated = true;
         coinsEarned += daily.coinsBounty;
         xpEarned += daily.xpBounty;
+
+        // Credit coins
         await walletService.creditCoins(
           daily.coinsBounty,
           daily.xpBounty,
           'goal',
-          `Defeated Daily Boss: ${daily.name}`,
+          `Defeated Boss: ${daily.name} (${player.equippedWeapon.name}) 🗡️`,
           daily.id
+        );
+
+        // Award soul shard
+        const nextShards = player.soulShards + 1;
+        await db.runAsync(
+          "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('player_soul_shards', ?, ?)",
+          [nextShards.toString(), now]
         );
       }
 
@@ -258,22 +363,22 @@ class VillainEngine {
           'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
           daily.id,
           source,
-          amount,
-          `Dealt ${amount} HP to ${daily.name} via ${actionName}`,
+          finalDamage,
+          `${player.equippedWeapon.name} dealt -${finalDamage} HP to ${daily.name} via ${actionName}`,
           now,
         ]
       );
     }
 
-    // 2. Damage Weekly Boss
+    // 2. Also damage Weekly Raid Boss
     if (weekly && weekly.status === 'active') {
-      const nextWeeklyHp = Math.max(0, weekly.currentHp - amount);
+      const nextWeeklyHp = Math.max(0, weekly.currentHp - finalDamage);
       weeklyRemaining = nextWeeklyHp;
       const isWeeklyDefeated = nextWeeklyHp === 0;
 
       // Adjust phase based on HP %
       const hpPercent = (nextWeeklyHp / weekly.maxHp) * 100;
-      const nextPhase = hpPercent > 60 ? 1 : hpPercent > 25 ? 2 : 3;
+      const nextPhase = hpPercent > 66 ? 1 : hpPercent > 33 ? 2 : 3;
 
       await db.runAsync(
         'UPDATE weekly_villains SET current_hp = ?, phase = ?, status = ? WHERE id = ?',
@@ -288,32 +393,44 @@ class VillainEngine {
           weekly.coinsBounty,
           weekly.xpBounty,
           'goal',
-          `Vanquished Raid Titan: ${weekly.name}`,
+          `Vanquished World Raid Boss: ${weekly.name} 🏆`,
           weekly.id
         );
       }
     }
 
+    // 3. Repair player shield on successful focus action
+    await this.repairPlayerShield(10);
+
     return {
-      damageDealt: amount,
+      damageDealt: finalDamage,
+      weaponMultiplier,
       dailyDefeated,
       weeklyDefeated,
       dailyRemainingHp: dailyRemaining,
       weeklyRemainingHp: weeklyRemaining,
       coinsEarned,
       xpEarned,
-      lootItem: dailyDefeated ? daily?.lootItemId : undefined,
+      lootItem: dailyDefeated ? 'item_soul_shard' : undefined,
     };
   }
 
   /**
-   * Record villain counter-attack when user opens a blocked app
+   * Inflict damage on player shield when giving up or breaching app
    */
   async takeCounterDamage(amount: number, appName: string): Promise<{ damage: number; logText: string }> {
     const db = await getDatabase();
+    const player = await this.getPlayerRpgProfile();
     const daily = await this.getActiveDailyVillain();
     const now = new Date().toISOString();
-    const logText = `${daily?.name || 'Villain'} counter-attacked for ${amount} damage due to opening ${appName}!`;
+
+    const nextShield = Math.max(0, player.shieldHp - amount);
+    await db.runAsync(
+      "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('player_shield_hp', ?, ?)",
+      [nextShield.toString(), now]
+    );
+
+    const logText = `${daily?.name || 'Villain'} counter-attacked for ${amount} damage due to opening ${appName}! Shield: ${nextShield}/100`;
 
     if (daily) {
       await db.runAsync(
@@ -334,9 +451,26 @@ class VillainEngine {
   }
 
   /**
-   * Get combat event history
+   * Repair player shield up to 100 HP
    */
-  async getCombatLogs(limit = 20): Promise<CombatLog[]> {
+  async repairPlayerShield(amount: number): Promise<number> {
+    const db = await getDatabase();
+    const player = await this.getPlayerRpgProfile();
+    const nextShield = Math.min(100, player.shieldHp + amount);
+    const now = new Date().toISOString();
+
+    await db.runAsync(
+      "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('player_shield_hp', ?, ?)",
+      [nextShield.toString(), now]
+    );
+
+    return nextShield;
+  }
+
+  /**
+   * Fetch combat history logs
+   */
+  async getCombatLogs(limit: number = 30): Promise<CombatLog[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{
       id: string;
@@ -349,7 +483,7 @@ class VillainEngine {
       created_at: string;
     }>('SELECT * FROM villain_combat_logs ORDER BY created_at DESC LIMIT ?', [limit]);
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       id: r.id,
       villainId: r.villain_id,
       villainType: r.villain_type as any,

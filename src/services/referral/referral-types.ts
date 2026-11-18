@@ -1,4 +1,5 @@
 export interface ReferralMilestone {
+  milestoneId: string;
   friendsCount: number;
   coinsReward: number;
   xpReward: number;
@@ -21,9 +22,19 @@ export interface ReferralBuddy {
 export interface ReferralProfile {
   referralCode: string;
   shareUrl: string;
+  hasClaimedInvite: boolean;
+  claimedCode: string | null;
   totalInvited: number;
   totalQualified: number;
   totalCoinsEarned: number;
   milestones: ReferralMilestone[];
   buddies: ReferralBuddy[];
+}
+
+export interface ClaimReferralResult {
+  success: boolean;
+  message: string;
+  coinsAwarded: number;
+  xpAwarded: number;
+  unlockedTrackTitle?: string;
 }
