@@ -1,41 +1,38 @@
-import { useEffect, useState } from 'react';
-import { Tabs, useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { Tabs, useRouter, usePathname } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BackHandler, Platform } from 'react-native';
 import { NinjaPalette } from '../../constants/theme';
-import { useNinja } from '../../context/ninja-context';
-import { checkLauncherStatus } from '../../services/launcher/launcher-service';
 
 export default function TabLayout() {
   const router = useRouter();
-  const { settings } = useNinja();
-  const [isDefaultHome, setIsDefaultHome] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    void checkLauncherStatus().then((status) => {
-      if (mounted) setIsDefaultHome(status.isDefault);
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
 
     const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (settings.ghostLauncherAsHome || isDefaultHome) {
-        if (!router.canGoBack()) {
-          router.replace('/focus/ghost-launcher' as any);
-          return true;
-        }
+      // In NeuroNinja's architecture, Ghost Launcher is the logical home.
+      // If the user is on the root Dojo screen, hardware back ALWAYS returns to Ghost Launcher!
+      const isRootDojo =
+        !pathname ||
+        pathname === '/' ||
+        pathname === '/(tabs)' ||
+        pathname === '/(tabs)/index' ||
+        pathname === '/index';
+
+      if (isRootDojo) {
+        router.replace('/focus/ghost-launcher' as any);
+        return true;
       }
-      return false;
+
+      // If on other sub-tabs (Armory, Gates, LifeOS, Analytics, Settings), return to Dojo
+      router.replace('/(tabs)' as any);
+      return true;
     });
 
     return () => backSub.remove();
-  }, [settings.ghostLauncherAsHome, isDefaultHome, router]);
+  }, [pathname, router]);
 
   return (
     <Tabs

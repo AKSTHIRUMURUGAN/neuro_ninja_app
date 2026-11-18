@@ -70,25 +70,42 @@ export default function DojoScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Image
-              source={require('@/assets/images/logo.png')}
-              style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: NinjaPalette.emerald }}
-              resizeMode="contain"
-            />
+            <TouchableOpacity
+              onPress={() => router.replace('/focus/ghost-launcher' as any)}
+              activeOpacity={0.7}
+            >
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: NinjaPalette.emerald }}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
             <View>
               <Text style={styles.rankBadge}>NINJA DISCIPLINE</Text>
               <Text style={styles.appTitle}>The Dojo</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.statsPill}
-            onPress={() => router.push('/(tabs)/stats' as any)}
-          >
-            <MaterialCommunityIcons name="lightning-bolt" size={16} color={NinjaPalette.emerald} />
-            <Text style={styles.statsPillText}>
-              {settings.totalInterceptsCount} Intercepts
-            </Text>
-          </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={styles.launcherBackPill}
+              onPress={() => router.replace('/focus/ghost-launcher' as any)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="ghost" size={16} color={NinjaPalette.emerald} />
+              <Text style={styles.launcherBackText}>Launcher</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.statsPill}
+              onPress={() => router.push('/(tabs)/stats' as any)}
+            >
+              <MaterialCommunityIcons name="lightning-bolt" size={16} color={NinjaPalette.emerald} />
+              <Text style={styles.statsPillText}>
+                {settings.totalInterceptsCount}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Temporary Unlock Active Banner */}
@@ -357,6 +374,22 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '900',
     color: NinjaPalette.textPrimary,
+  },
+  launcherBackPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  launcherBackText: {
+    color: NinjaPalette.emerald,
+    fontSize: 12,
+    fontWeight: '700',
   },
   statsPill: {
     flexDirection: 'row',

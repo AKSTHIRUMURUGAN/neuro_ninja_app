@@ -182,10 +182,8 @@ export default function GhostLauncherScreen() {
       }
 
       // Sitting on Minimal Home Desktop: a true launcher NEVER exits on Back press!
-      if (isDefaultLauncher || settings.ghostLauncherAsHome) {
-        return true;
-      }
-      return false;
+      // In NeuroNinja, Ghost Launcher is the home screen desktop.
+      return true;
     };
 
     const backSub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
@@ -1113,11 +1111,34 @@ export default function GhostLauncherScreen() {
                   </View>
                   <Switch
                     value={settings.ghostLauncherAsHome}
-                    onValueChange={(val) => void setGhostLauncherAsHome(val)}
+                    onValueChange={(val) => {
+                      void setGhostLauncherAsHome(val);
+                      if (val && Platform.OS === 'android') {
+                        promptSetDefaultLauncher();
+                      }
+                    }}
                     trackColor={{ false: '#334155', true: '#10B981' }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
+
+                <TouchableOpacity
+                  style={[styles.modalSecondaryBtn, { borderColor: themeStyles.border, marginTop: 12 }]}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    openNormalLauncherSettings();
+                  }}
+                >
+                  <MaterialCommunityIcons name="cog-outline" size={20} color="#00E699" />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.secondaryBtnTitle, { color: themeStyles.text }]}>
+                      Switch Default Home App
+                    </Text>
+                    <Text style={[styles.secondaryBtnSub, { color: themeStyles.subtext }]}>
+                      Open system settings to select or switch your phone launcher anytime.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
 
               {/* Full App Dojo Escape */}

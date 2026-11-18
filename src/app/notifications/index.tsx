@@ -24,6 +24,7 @@ import { AppIcon } from '../../components/ui/app-icon';
 import { useNinjaBack } from '../../hooks/use-ninja-back';
 import {
   groupNotificationsByApp,
+  deduplicateNotifications,
   paginateList,
   AppNotificationGroup,
 } from '../../services/notifications/notification-grouper';
@@ -72,7 +73,7 @@ export default function NotificationIntelligenceScreen() {
         Promise.resolve(blockerEngine.getVipPackages()),
       ]);
       setIsListenerGranted(granted);
-      setNotifications(items || []);
+      setNotifications(deduplicateNotifications(items || []));
       setFilterEnabled(isFiltering);
       setSuppressAllNonVip(isAllNonVip);
       setVipPackages(vips || []);

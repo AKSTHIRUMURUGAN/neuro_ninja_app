@@ -45,12 +45,11 @@ export function useNinjaBack(options?: UseNinjaBackOptions) {
       router.back();
     } else if (fallbackRoute) {
       router.replace(fallbackRoute as any);
-    } else if (isLauncherActive) {
-      router.replace('/focus/ghost-launcher' as any);
     } else {
-      router.replace('/(tabs)' as any);
+      // In NeuroNinja, Ghost Launcher is the universal logical home.
+      router.replace('/focus/ghost-launcher' as any);
     }
-  }, [router, isLauncherActive, onBackOverride, fallbackRoute]);
+  }, [router, onBackOverride, fallbackRoute]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !enableHardwareBack) return;
@@ -71,16 +70,12 @@ export function useNinjaBack(options?: UseNinjaBackOptions) {
         return true;
       }
 
-      if (isLauncherActive) {
-        router.replace('/focus/ghost-launcher' as any);
-        return true;
-      }
-
-      return false;
+      router.replace('/focus/ghost-launcher' as any);
+      return true;
     });
 
     return () => backSub.remove();
-  }, [enableHardwareBack, onBackOverride, router, fallbackRoute, isLauncherActive]);
+  }, [enableHardwareBack, onBackOverride, router, fallbackRoute]);
 
   return {
     handleSmartBack,

@@ -104,7 +104,37 @@ export function inferAppNotificationCategory(
 }
 
 /**
+ * Removes duplicate notifications based on unique ID or identical
+ * (packageName + title + body) content signature, preserving the newest entry.
+ */
+export function deduplicateNotifications(
+  notifications: SuppressedNotification[]
+): SuppressedNotification[] {
+  if (!notifications || notifications.length === 0) return [];
+
+  const map = new Map<string, SuppressedNotification>();
+
+  for (const n of notifications) {
+    const pkg = n.packageName || '';
+    const title = (n.title || '').trim();
+    const body = (n.body || '').trim();
+    const sig = `${pkg}:::${title}:::${body}`;
+    const id = n.id || sig;
+
+    const key = sig.length > 5 ? sig : id;
+    const existing = map.get(key);
+
+    if (!existing || (n.postTime || 0) > (existing.postTime || 0)) {
+      map.set(key, n);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => (b.postTime || 0) - (a.postTime || 0));
+}
+
+/**
  * Groups a flat array of suppressed notifications by application package name.
+ * Automatically cleanses duplicate alerts before grouping.
  * Sorts internal items by postTime descending (newest first).
  * Sorts groups by latestPostTime descending.
  */
@@ -113,9 +143,10 @@ export function groupNotificationsByApp(
 ): AppNotificationGroup[] {
   if (!notifications || notifications.length === 0) return [];
 
+  const deduped = deduplicateNotifications(notifications);
   const map = new Map<string, SuppressedNotification[]>();
 
-  for (const n of notifications) {
+  for (const n of deduped) {
     const pkg = n.packageName || 'unknown';
     const list = map.get(pkg) || [];
     list.push(n);
