@@ -8,8 +8,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useNinjaBack } from '../../hooks/use-ninja-back';
 import { FocusGrove } from '../../components/focus-grove';
 import { FocusAudioPlayer } from '../../components/focus-audio-player';
 import { YouTubeStudyPortal } from '../../components/youtube-study-portal';
@@ -29,7 +30,6 @@ import type {
 } from '../../services/focus/deep-work-types';
 
 export default function PomodoroFocusScreen() {
-  const router = useRouter();
   const { showAlert, showToast } = useNinjaAlert();
   const params = useLocalSearchParams<{ minutes?: string; label?: string }>();
 
@@ -54,6 +54,25 @@ export default function PomodoroFocusScreen() {
   const [showLaunchModal, setShowLaunchModal] = useState<boolean>(false);
   const [showImpulseModal, setShowImpulseModal] = useState<boolean>(false);
   const [showDebriefModal, setShowDebriefModal] = useState<boolean>(false);
+
+  const { handleSmartBack } = useNinjaBack({
+    onBackOverride: () => {
+      if (showLaunchModal) {
+        setShowLaunchModal(false);
+        return true;
+      }
+      if (showImpulseModal) {
+        setShowImpulseModal(false);
+        return true;
+      }
+      if (showDebriefModal) {
+        setShowDebriefModal(false);
+        return true;
+      }
+      return false;
+    },
+    fallbackRoute: '/focus/ghost-launcher',
+  });
 
   // Elapsed tracker for actual deep work seconds
   const [actualSeconds, setActualSeconds] = useState<number>(0);
@@ -281,7 +300,7 @@ export default function PomodoroFocusScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleSmartBack}>
           <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>

@@ -12,9 +12,9 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useNinjaBack } from '../../../hooks/use-ninja-back';
 import { neuroBodyEngine } from '../../../services/body/neurobody-engine';
 import { womensHealthEngine } from '../../../services/body/womens-health-engine';
 import { neuroHealthEngine } from '../../../services/health/neurohealth-engine';
@@ -47,7 +47,6 @@ import {
 type BodyTab = 'cycle' | 'fasting' | 'hydration' | 'nutrition' | 'metrics' | 'mind';
 
 export default function NeuroBodyScreen() {
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<BodyTab>('cycle');
   const [summary, setSummary] = useState<BodyDaySummary | null>(null);
 
@@ -56,6 +55,29 @@ export default function NeuroBodyScreen() {
   const [showMetricModal, setShowMetricModal] = useState(false);
   const [showFastModal, setShowFastModal] = useState(false);
   const [showModeModal, setShowModeModal] = useState(false);
+
+  const { handleSmartBack } = useNinjaBack({
+    onBackOverride: () => {
+      if (showMealModal) {
+        setShowMealModal(false);
+        return true;
+      }
+      if (showMetricModal) {
+        setShowMetricModal(false);
+        return true;
+      }
+      if (showFastModal) {
+        setShowFastModal(false);
+        return true;
+      }
+      if (showModeModal) {
+        setShowModeModal(false);
+        return true;
+      }
+      return false;
+    },
+    fallbackRoute: '/focus/ghost-launcher',
+  });
 
   // Women's Health Form State
   const [selectedFlow, setSelectedFlow] = useState<FlowLevel | undefined>(undefined);
@@ -367,10 +389,7 @@ export default function NeuroBodyScreen() {
       {/* ────────── Top Bar ────────── */}
       <View style={styles.topBar}>
         <TouchableOpacity
-          onPress={() => {
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
+          onPress={handleSmartBack}
           style={styles.backButton}
         >
           <Ionicons name="arrow-back" size={24} color="#FFF" />

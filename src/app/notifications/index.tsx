@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,22 +11,36 @@ import {
   Modal,
   TextInput,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { NinjaPalette } from '../../constants/theme';
 import { useNinjaAlert } from '../../context/ninja-alert-context';
 import { blockerEngine } from '../../services/blocker/blocker-engine';
 import { launchApplication } from '../../services/launcher/launcher-service';
 import { sanitizeDopamineAlert } from '../../services/notifications/notification-firewall';
 import { AppIcon } from '../../components/ui/app-icon';
+import { useNinjaBack } from '../../hooks/use-ninja-back';
+import {
+  groupNotificationsByApp,
+  paginateList,
+  AppNotificationGroup,
+} from '../../services/notifications/notification-grouper';
+import { AppNotificationGroupCard } from '../../components/notifications/app-notification-group-card';
 import type { SuppressedNotification, AndroidBlockableApp } from 'expo-app-blocker';
 
 export default function NotificationIntelligenceScreen() {
-  const router = useRouter();
+  const { handleSmartBack } = useNinjaBack({
+    fallbackRoute: '/focus/ghost-launcher',
+  });
   const { showToast } = useNinjaAlert();
+
+  // Screen Loading & Pagination State
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+  const [page, setPage] = useState<number>(1);
+  const [viewMode, setViewMode] = useState<'grouped' | 'stream'>('grouped');
+  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
 
   // Native Service State
   const [isListenerGranted, setIsListenerGranted] = useState<boolean>(true);
@@ -44,8 +58,11 @@ export default function NotificationIntelligenceScreen() {
   const [installedApps, setInstalledApps] = useState<AndroidBlockableApp[]>([]);
   const [vipSearchQuery, setVipSearchQuery] = useState<string>('');
 
-  const fetchVaultData = async () => {
-    if (Platform.OS !== 'android') return;
+  const fetchVaultData = useCallback(async () => {
+    if (Platform.OS !== 'android') {
+      setIsInitialLoading(false);
+      return;
+    }
     try {
       const [granted, items, isFiltering, isAllNonVip, vips] = await Promise.all([
         blockerEngine.isNotificationListenerGranted(),
@@ -61,37 +78,21 @@ export default function NotificationIntelligenceScreen() {
       setVipPackages(vips || []);
     } catch (e) {
       console.warn('[NotificationVault] Failed to load native data:', e);
+    } finally {
+      setIsInitialLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     let isSubscribed = true;
-    const initializeVault = async () => {
-      if (Platform.OS !== 'android') return;
-      try {
-        const [granted, items, isFiltering, isAllNonVip, vips] = await Promise.all([
-          blockerEngine.isNotificationListenerGranted(),
-          blockerEngine.getSuppressedNotifications(),
-          Promise.resolve(blockerEngine.isNotificationFilterEnabled()),
-          Promise.resolve(blockerEngine.isSuppressAllNonVip()),
-          Promise.resolve(blockerEngine.getVipPackages()),
-        ]);
-        if (isSubscribed) {
-          setIsListenerGranted(granted);
-          setNotifications(items || []);
-          setFilterEnabled(isFiltering);
-          setSuppressAllNonVip(isAllNonVip);
-          setVipPackages(vips || []);
-        }
-      } catch (e) {
-        console.warn('[NotificationVault] Failed to load native data:', e);
-      }
+    const load = async () => {
+      await fetchVaultData();
     };
-    void initializeVault();
+    void load();
 
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') {
-        void initializeVault();
+      if (next === 'active' && isSubscribed) {
+        void fetchVaultData();
       }
     });
 
@@ -99,10 +100,11 @@ export default function NotificationIntelligenceScreen() {
       isSubscribed = false;
       sub.remove();
     };
-  }, []);
+  }, [fetchVaultData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    setPage(1);
     await fetchVaultData();
     setIsRefreshing(false);
   };
@@ -119,7 +121,7 @@ export default function NotificationIntelligenceScreen() {
     showToast({
       title: val ? 'Notification Shield Active' : 'Notification Shield Paused',
       message: val
-        ? 'Notifications will be intercepted and held in this vault.'
+        ? 'Notifications will be intercepted and held silently in this vault.'
         : 'Notifications will pass through to system shade.',
       type: val ? 'success' : 'info',
       icon: val ? 'shield-check' : 'shield-off',
@@ -157,6 +159,7 @@ export default function NotificationIntelligenceScreen() {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     blockerEngine.clearAllSuppressedNotifications();
     setNotifications([]);
+    setExpandedPackages(new Set());
     showToast({
       title: 'Vault Cleared',
       message: 'All held notifications have been permanently cleared.',
@@ -169,6 +172,26 @@ export default function NotificationIntelligenceScreen() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     blockerEngine.clearSuppressedNotification(id);
     setNotifications((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleDismissAllFromApp = async (pkg: string, appName: string) => {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const targetItems = notifications.filter((n) => n.packageName === pkg);
+    for (const item of targetItems) {
+      blockerEngine.clearSuppressedNotification(item.id);
+    }
+    setNotifications((prev) => prev.filter((item) => item.packageName !== pkg));
+    setExpandedPackages((prev) => {
+      const next = new Set(prev);
+      next.delete(pkg);
+      return next;
+    });
+    showToast({
+      title: `Cleared ${appName}`,
+      message: `${targetItems.length} notifications permanently cleared.`,
+      type: 'info',
+      icon: 'delete-sweep',
+    });
   };
 
   const handleLaunchApp = (pkg: string) => {
@@ -195,6 +218,18 @@ export default function NotificationIntelligenceScreen() {
     }
     setVipPackages(updated);
     blockerEngine.setVipPackages(updated);
+  };
+
+  const toggleGroupExpand = (pkg: string) => {
+    setExpandedPackages((prev) => {
+      const next = new Set(prev);
+      if (next.has(pkg)) {
+        next.delete(pkg);
+      } else {
+        next.add(pkg);
+      }
+      return next;
+    });
   };
 
   // Distinct apps in notifications for tab filter
@@ -225,11 +260,35 @@ export default function NotificationIntelligenceScreen() {
     });
   }, [notifications, selectedAppFilter, searchQuery]);
 
+  // Grouped by App list
+  const groupedList = useMemo(() => {
+    return groupNotificationsByApp(filteredNotifications);
+  }, [filteredNotifications]);
+
+  // Paginated Results (10 by 10)
+  const paginatedGroups = useMemo(() => {
+    return paginateList<AppNotificationGroup>(groupedList, page, 10);
+  }, [groupedList, page]);
+
+  const paginatedStream = useMemo(() => {
+    return paginateList<SuppressedNotification>(filteredNotifications, page, 10);
+  }, [filteredNotifications, page]);
+
+  const handleLoadMore = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPage((prev) => prev + 1);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
+      {/* Header with smart universal back handling */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={handleSmartBack}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityLabel="Go back"
+        >
           <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
@@ -342,6 +401,43 @@ export default function NotificationIntelligenceScreen() {
           </Text>
         </View>
 
+        {/* View Mode Switcher: Grouped vs Stream */}
+        <View style={styles.viewModeSwitcher}>
+          <TouchableOpacity
+            style={[styles.modeTab, viewMode === 'grouped' && styles.modeTabActive]}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setViewMode('grouped');
+            }}
+          >
+            <MaterialCommunityIcons
+              name="folder-outline"
+              size={16}
+              color={viewMode === 'grouped' ? '#00E699' : '#94A3B8'}
+            />
+            <Text style={[styles.modeTabText, viewMode === 'grouped' && styles.modeTabTextActive]}>
+              Grouped by App ({groupedList.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modeTab, viewMode === 'stream' && styles.modeTabActive]}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setViewMode('stream');
+            }}
+          >
+            <MaterialCommunityIcons
+              name="timeline-clock-outline"
+              size={16}
+              color={viewMode === 'stream' ? '#00E699' : '#94A3B8'}
+            />
+            <Text style={[styles.modeTabText, viewMode === 'stream' && styles.modeTabTextActive]}>
+              Timeline ({filteredNotifications.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Filter Pills */}
         {distinctApps.length > 1 && (
           <ScrollView
@@ -351,17 +447,14 @@ export default function NotificationIntelligenceScreen() {
             contentContainerStyle={styles.pillContainer}
           >
             <TouchableOpacity
-              style={[
-                styles.pill,
-                selectedAppFilter === 'ALL' && styles.pillActive,
-              ]}
-              onPress={() => setSelectedAppFilter('ALL')}
+              style={[styles.pill, selectedAppFilter === 'ALL' && styles.pillActive]}
+              onPress={() => {
+                setSelectedAppFilter('ALL');
+                setPage(1);
+              }}
             >
               <Text
-                style={[
-                  styles.pillText,
-                  selectedAppFilter === 'ALL' && styles.pillTextActive,
-                ]}
+                style={[styles.pillText, selectedAppFilter === 'ALL' && styles.pillTextActive]}
               >
                 All ({notifications.length})
               </Text>
@@ -374,7 +467,10 @@ export default function NotificationIntelligenceScreen() {
                 <TouchableOpacity
                   key={pkg}
                   style={[styles.pill, isActive && styles.pillActive]}
-                  onPress={() => setSelectedAppFilter(pkg)}
+                  onPress={() => {
+                    setSelectedAppFilter(pkg);
+                    setPage(1);
+                  }}
                 >
                   <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
                     {name} ({count})
@@ -385,7 +481,7 @@ export default function NotificationIntelligenceScreen() {
           </ScrollView>
         )}
 
-        {/* Search Bar if multiple notifications */}
+        {/* Search Bar */}
         {notifications.length > 3 && (
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color="#64748B" />
@@ -394,7 +490,10 @@ export default function NotificationIntelligenceScreen() {
               placeholder="Search held notifications..."
               placeholderTextColor="#64748B"
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                setPage(1);
+              }}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -404,16 +503,30 @@ export default function NotificationIntelligenceScreen() {
           </View>
         )}
 
-        {/* Notifications List */}
+        {/* Notifications Section */}
         <View style={styles.inboxSection}>
           <View style={styles.inboxHeader}>
             <Text style={styles.inboxTitle}>
-              Held Notifications ({filteredNotifications.length})
+              {viewMode === 'grouped'
+                ? `Held App Bundles (${groupedList.length})`
+                : `Held Notifications (${filteredNotifications.length})`}
             </Text>
-            <Text style={styles.inboxSub}>Intercepted & Protected</Text>
+            <Text style={styles.inboxSub}>
+              {isInitialLoading ? 'Syncing...' : 'Intercepted & Protected'}
+            </Text>
           </View>
 
-          {filteredNotifications.length === 0 ? (
+          {/* Instant Skeleton State during fetch */}
+          {isInitialLoading ? (
+            <View style={styles.skeletonContainer}>
+              <View style={styles.skeletonCard}>
+                <ActivityIndicator size="small" color="#00E699" />
+                <Text style={styles.skeletonText}>Loading Suppressed Notification Vault...</Text>
+              </View>
+              <View style={[styles.skeletonCard, { opacity: 0.6 }]} />
+              <View style={[styles.skeletonCard, { opacity: 0.3 }]} />
+            </View>
+          ) : filteredNotifications.length === 0 ? (
             <View style={styles.emptyCard}>
               <MaterialCommunityIcons name="bell-check-outline" size={36} color="#00E699" />
               <Text style={styles.emptyTitle}>Zero Distraction Noise</Text>
@@ -423,66 +536,115 @@ export default function NotificationIntelligenceScreen() {
                   : 'No notifications match your current filter.'}
               </Text>
             </View>
+          ) : viewMode === 'grouped' ? (
+            /* Grouped App Accordion Cards */
+            <>
+              {paginatedGroups.data.map((group) => (
+                <AppNotificationGroupCard
+                  key={group.packageName}
+                  group={group}
+                  isExpanded={expandedPackages.has(group.packageName)}
+                  onToggleExpand={() => toggleGroupExpand(group.packageName)}
+                  onDismissNotification={handleDismiss}
+                  onDismissAllFromApp={handleDismissAllFromApp}
+                  onLaunchApp={handleLaunchApp}
+                  onWhitelistVip={handleQuickWhitelist}
+                  isVip={vipPackages.includes(group.packageName)}
+                  dopamineObfuscation={dopamineObfuscation}
+                />
+              ))}
+
+              {/* Pagination (10 next 10) for Grouped View */}
+              {paginatedGroups.hasMore && (
+                <TouchableOpacity style={styles.loadMoreBtn} onPress={handleLoadMore}>
+                  <MaterialCommunityIcons name="chevron-double-down" size={18} color="#00E699" />
+                  <Text style={styles.loadMoreText}>
+                    Load Next 10 App Groups ({paginatedGroups.remaining} remaining)
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           ) : (
-            filteredNotifications.map((n) => {
-              const clean = dopamineObfuscation
-                ? sanitizeDopamineAlert(n.title, n.body, n.appName)
-                : { cleanTitle: n.title, cleanBody: n.body };
+            /* Chronological Flat Stream (Paginated 10-by-10) */
+            <>
+              {paginatedStream.data.map((n) => {
+                const clean = dopamineObfuscation
+                  ? sanitizeDopamineAlert(n.title, n.body, n.appName)
+                  : { cleanTitle: n.title, cleanBody: n.body };
 
-              return (
-                <View key={n.id} style={styles.notifCard}>
-                  <View style={styles.notifIconWrapper}>
-                    <AppIcon packageName={n.packageName} appName={n.appName} size={36} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <View style={styles.notifTop}>
-                      <Text style={styles.notifApp}>{n.appName}</Text>
-                      <Text style={styles.notifTime}>{n.formattedTime}</Text>
+                return (
+                  <View key={n.id} style={styles.notifCard}>
+                    <View style={styles.notifIconWrapper}>
+                      <AppIcon packageName={n.packageName} appName={n.appName} size={36} />
                     </View>
-                    <Text style={styles.notifTitle}>{clean.cleanTitle}</Text>
-                    {clean.cleanBody ? (
-                      <Text style={styles.notifBody} numberOfLines={3}>
-                        {clean.cleanBody}
-                      </Text>
-                    ) : null}
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <View style={styles.notifTop}>
+                        <Text style={styles.notifApp}>{n.appName}</Text>
+                        <Text style={styles.notifTime}>{n.formattedTime}</Text>
+                      </View>
+                      <Text style={styles.notifTitle}>{clean.cleanTitle}</Text>
+                      {clean.cleanBody ? (
+                        <Text style={styles.notifBody} numberOfLines={3}>
+                          {clean.cleanBody}
+                        </Text>
+                      ) : null}
 
-                    {/* Quick Action Row (Regain / Daywise Parity) */}
-                    <View style={styles.notifActions}>
-                      <TouchableOpacity
-                        style={styles.openAppBtn}
-                        onPress={() => handleLaunchApp(n.packageName)}
-                      >
-                        <MaterialCommunityIcons name="launch" size={14} color="#00E699" />
-                        <Text style={styles.openAppText}>Open App</Text>
-                      </TouchableOpacity>
+                      {/* Quick Action Row */}
+                      <View style={styles.notifActions}>
+                        <TouchableOpacity
+                          style={styles.openAppBtn}
+                          onPress={() => handleLaunchApp(n.packageName)}
+                        >
+                          <MaterialCommunityIcons name="launch" size={14} color="#00E699" />
+                          <Text style={styles.openAppText}>Open App</Text>
+                        </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={styles.whitelistBtn}
-                        onPress={() => handleQuickWhitelist(n.packageName, n.appName)}
-                      >
-                        <MaterialCommunityIcons name="shield-star-outline" size={14} color="#818CF8" />
-                        <Text style={styles.whitelistText}>Allow Alerts (VIP)</Text>
-                      </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.whitelistBtn}
+                          onPress={() => handleQuickWhitelist(n.packageName, n.appName)}
+                        >
+                          <MaterialCommunityIcons
+                            name="shield-star-outline"
+                            size={14}
+                            color="#818CF8"
+                          />
+                          <Text style={styles.whitelistText}>Allow Alerts (VIP)</Text>
+                        </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={styles.dismissPillBtn}
-                        onPress={() => void handleDismiss(n.id)}
-                      >
-                        <MaterialCommunityIcons name="trash-can-outline" size={14} color="#EF4444" />
-                        <Text style={styles.dismissPillText}>Dismiss</Text>
-                      </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.dismissPillBtn}
+                          onPress={() => void handleDismiss(n.id)}
+                        >
+                          <MaterialCommunityIcons
+                            name="trash-can-outline"
+                            size={14}
+                            color="#EF4444"
+                          />
+                          <Text style={styles.dismissPillText}>Dismiss</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
 
-                  <TouchableOpacity
-                    style={styles.dismissBtn}
-                    onPress={() => void handleDismiss(n.id)}
-                  >
-                    <Ionicons name="close" size={16} color="#64748B" />
-                  </TouchableOpacity>
-                </View>
-              );
-            })
+                    <TouchableOpacity
+                      style={styles.dismissBtn}
+                      onPress={() => void handleDismiss(n.id)}
+                    >
+                      <Ionicons name="close" size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+
+              {/* Pagination for Stream View */}
+              {paginatedStream.hasMore && (
+                <TouchableOpacity style={styles.loadMoreBtn} onPress={handleLoadMore}>
+                  <MaterialCommunityIcons name="chevron-double-down" size={18} color="#00E699" />
+                  <Text style={styles.loadMoreText}>
+                    Load Next 10 Alerts ({paginatedStream.remaining} remaining)
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
       </ScrollView>
@@ -526,22 +688,19 @@ export default function NotificationIntelligenceScreen() {
 
             <ScrollView style={styles.vipList}>
               {installedApps
-                .filter((app) =>
-                  vipSearchQuery.trim()
-                    ? app.name.toLowerCase().includes(vipSearchQuery.toLowerCase()) ||
-                      app.packageName.toLowerCase().includes(vipSearchQuery.toLowerCase())
-                    : true
+                .filter(
+                  (a) =>
+                    !vipSearchQuery.trim() ||
+                    (a.name || a.packageName).toLowerCase().includes(vipSearchQuery.toLowerCase()) ||
+                    a.packageName.toLowerCase().includes(vipSearchQuery.toLowerCase())
                 )
                 .map((app) => {
                   const isVip = vipPackages.includes(app.packageName);
                   return (
                     <View key={app.packageName} style={styles.vipRow}>
-                      <AppIcon packageName={app.packageName} appName={app.name} size={32} />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={styles.vipAppName}>{app.name}</Text>
-                        <Text style={styles.vipAppPkg} numberOfLines={1}>
-                          {app.packageName}
-                        </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.vipAppName}>{app.name || app.packageName}</Text>
+                        <Text style={styles.vipAppPkg}>{app.packageName}</Text>
                       </View>
                       <Switch
                         value={isVip}
@@ -568,63 +727,72 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#070A11',
   },
   backBtn: {
-    padding: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#0F1829',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   badge: {
-    color: '#00E699',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 1.5,
+    color: '#00E699',
+    letterSpacing: 1.2,
   },
   title: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '900',
     color: '#F8FAFC',
+    marginTop: 1,
   },
   vipBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 230, 153, 0.12)',
+    backgroundColor: 'rgba(0, 230, 153, 0.1)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 153, 0.25)',
+    borderColor: 'rgba(0, 230, 153, 0.3)',
     marginRight: 8,
   },
   vipBtnText: {
-    color: '#00E699',
     fontSize: 12,
     fontWeight: '700',
+    color: '#00E699',
   },
   clearBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    paddingHorizontal: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   clearBtnText: {
-    color: '#EF4444',
     fontSize: 12,
     fontWeight: '700',
+    color: '#EF4444',
   },
   scroll: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 40,
   },
   permBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.3)',
     borderRadius: 16,
@@ -640,19 +808,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   permTitle: {
-    color: '#F59E0B',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#F59E0B',
   },
   permSub: {
-    color: '#94A3B8',
     fontSize: 11,
+    color: '#94A3B8',
     marginTop: 2,
+    lineHeight: 15,
   },
   card: {
     backgroundColor: '#0F1829',
     borderRadius: 20,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 16,
@@ -660,79 +829,112 @@ const styles = StyleSheet.create({
   cardHeading: {
     fontSize: 10,
     fontWeight: '800',
-    color: NinjaPalette.emerald,
-    letterSpacing: 1.5,
-    marginBottom: 10,
+    color: '#64748B',
+    letterSpacing: 1.2,
+    marginBottom: 12,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.04)',
   },
   rowTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: NinjaPalette.textPrimary,
+    fontWeight: '700',
+    color: '#F8FAFC',
   },
   rowSub: {
     fontSize: 11,
-    color: NinjaPalette.textSecondary,
-    marginTop: 2,
+    color: '#94A3B8',
+    marginTop: 1,
+    lineHeight: 15,
   },
   digestCard: {
-    backgroundColor: '#0B132B',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: 'rgba(0, 230, 153, 0.05)',
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 153, 0.25)',
+    borderColor: 'rgba(0, 230, 153, 0.2)',
     marginBottom: 16,
   },
   digestHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 6,
   },
   digestBadge: {
-    color: '#00E699',
     fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 1.2,
+    color: '#00E699',
+    letterSpacing: 1,
   },
   digestTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: '#F8FAFC',
-    marginTop: 2,
+    marginTop: 1,
   },
   digestBody: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
-    lineHeight: 18,
-    marginTop: 10,
+    lineHeight: 16,
+  },
+  viewModeSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#0F1829',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 4,
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  modeTabActive: {
+    backgroundColor: 'rgba(0, 230, 153, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.3)',
+  },
+  modeTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  modeTabTextActive: {
+    color: '#00E699',
   },
   pillScroll: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   pillContainer: {
     gap: 8,
   },
   pill: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    backgroundColor: '#0F1829',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   pillActive: {
-    backgroundColor: 'rgba(0, 230, 153, 0.2)',
+    backgroundColor: 'rgba(0, 230, 153, 0.15)',
     borderColor: '#00E699',
   },
   pillText: {
-    color: '#94A3B8',
     fontSize: 12,
+    color: '#94A3B8',
     fontWeight: '600',
   },
   pillTextActive: {
@@ -746,7 +948,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
@@ -757,16 +959,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   inboxSection: {
-    marginTop: 8,
+    marginTop: 4,
   },
   inboxHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
+    alignItems: 'center',
     marginBottom: 12,
   },
   inboxTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#F8FAFC',
   },
@@ -774,26 +976,63 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
   },
+  skeletonContainer: {
+    gap: 10,
+  },
+  skeletonCard: {
+    height: 70,
+    backgroundColor: '#0F1829',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  skeletonText: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
   emptyCard: {
     backgroundColor: '#0F1829',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 30,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#F8FAFC',
-    marginTop: 12,
+    marginTop: 10,
   },
   emptySub: {
     fontSize: 12,
     color: '#64748B',
     textAlign: 'center',
     marginTop: 4,
-    lineHeight: 18,
+    lineHeight: 16,
+  },
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#0F1829',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.3)',
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#00E699',
   },
   notifCard: {
     flexDirection: 'row',

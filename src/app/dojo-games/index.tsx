@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useNinjaBack } from '../../hooks/use-ninja-back';
 
 import { MatiksSprint } from '../../components/dojo/matiks-sprint';
 import { CrossMath } from '../../components/dojo/cross-math';
@@ -128,10 +128,24 @@ const ARCADE_GAMES: GameMetadata[] = [
 ];
 
 export default function DojoGamesScreen() {
-  const router = useRouter();
   const [activeGame, setActiveGame] = useState<GameId | null>(null);
   const [filter, setFilter] = useState<CategoryFilter>('all');
   const [stats, setStats] = useState<DojoStats | null>(null);
+
+  const handleCloseGame = useCallback(() => {
+    setActiveGame(null);
+  }, []);
+
+  const { handleSmartBack } = useNinjaBack({
+    onBackOverride: () => {
+      if (activeGame) {
+        handleCloseGame();
+        return true;
+      }
+      return false;
+    },
+    fallbackRoute: '/focus/ghost-launcher',
+  });
 
   // Result modal state
   const [resultModalVisible, setResultModalVisible] = useState(false);
@@ -145,10 +159,6 @@ export default function DojoGamesScreen() {
 
   const handleOpenGame = (gameId: GameId) => {
     setActiveGame(gameId);
-  };
-
-  const handleCloseGame = () => {
-    setActiveGame(null);
   };
 
   const onMatiksCompleted = async (result: {
@@ -260,7 +270,7 @@ export default function DojoGamesScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Top Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => (activeGame ? handleCloseGame() : router.back())}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleSmartBack}>
           <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>

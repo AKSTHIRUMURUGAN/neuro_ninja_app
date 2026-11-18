@@ -891,7 +891,7 @@ export default function GhostLauncherScreen() {
         {/* Access NeuroNinja Focus Suite */}
         <TouchableOpacity
           style={[styles.exitBtn, { borderTopColor: themeStyles.border }]}
-          onPress={() => router.replace('/(tabs)' as any)}
+          onPress={() => router.push('/(tabs)' as any)}
         >
           <MaterialCommunityIcons name="shield-half-full" size={18} color={themeStyles.accent} />
           <Text style={[styles.exitText, { color: themeStyles.subtext }]}>
@@ -1134,7 +1134,7 @@ export default function GhostLauncherScreen() {
                   style={[styles.modalSecondaryBtn, { borderColor: themeStyles.border }]}
                   onPress={() => {
                     setShowSettingsModal(false);
-                    router.replace('/(tabs)' as any);
+                    router.push('/(tabs)' as any);
                   }}
                 >
                   <MaterialCommunityIcons name="sword-cross" size={20} color="#10B981" />
