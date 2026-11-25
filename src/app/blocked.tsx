@@ -1161,7 +1161,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
     fontSize: 14,
     fontWeight: 'bold',
-    letterSpacing: 2,
+    letterSpacing: 0.5,
     textAlign: 'center',
     marginBottom: 10,
   },

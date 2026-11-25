@@ -339,10 +339,10 @@ export default function DojoGamesScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
             {[
               { id: 'all', label: 'All Games', icon: 'gamepad-variant' },
-              { id: 'math', label: '⚡ Matiks Math', icon: 'calculator' },
-              { id: 'chess', label: '♟️ Chess Dojo', icon: 'chess-knight' },
-              { id: 'focus', label: '🎯 Reflex', icon: 'target' },
-              { id: 'memory', label: '🧠 Memory', icon: 'brain' },
+              { id: 'math', label: 'Matiks Math', icon: 'calculator' },
+              { id: 'chess', label: 'Chess Dojo', icon: 'chess-knight' },
+              { id: 'focus', label: 'Reflex', icon: 'target' },
+              { id: 'memory', label: 'Memory', icon: 'brain' },
             ].map((f) => {
               const isSelected = filter === f.id;
               return (
@@ -351,6 +351,11 @@ export default function DojoGamesScreen() {
                   style={[styles.filterPill, isSelected && styles.filterPillActive]}
                   onPress={() => setFilter(f.id as CategoryFilter)}
                 >
+                  <MaterialCommunityIcons
+                    name={f.icon as any}
+                    size={14}
+                    color={isSelected ? '#070A11' : '#94A3B8'}
+                  />
                   <Text style={[styles.filterPillText, isSelected && styles.filterPillTextActive]}>
                     {f.label}
                   </Text>

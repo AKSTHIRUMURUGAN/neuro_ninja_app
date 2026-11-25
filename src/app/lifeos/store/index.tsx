@@ -27,10 +27,10 @@ type TabType = 'all' | 'impact' | 'goodies' | 'digital' | 'orders';
 
 const TABS: { label: string; value: TabType }[] = [
   { label: 'All Items', value: 'all' },
-  { label: 'Impact Causes 🌱', value: 'impact' },
-  { label: 'Merch & Gear 🛍️', value: 'goodies' },
-  { label: 'Digital Perks ⚡', value: 'digital' },
-  { label: 'My Orders 📦', value: 'orders' },
+  { label: 'Impact Causes', value: 'impact' },
+  { label: 'Merch & Gear', value: 'goodies' },
+  { label: 'Digital Perks', value: 'digital' },
+  { label: 'My Orders', value: 'orders' },
 ];
 
 export default function StoreScreen() {

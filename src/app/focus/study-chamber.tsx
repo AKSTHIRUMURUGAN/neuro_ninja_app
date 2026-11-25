@@ -178,7 +178,7 @@ export default function StudyChamberScreen() {
 
         {/* Cheer Reactions Strip */}
         <View style={styles.cheerSection}>
-          <Text style={styles.sectionHeader}>CHEER ROOM PEERS</Text>
+          <Text style={styles.sectionHeader}>Cheer Room Peers</Text>
           <View style={styles.cheerRow}>
             {[
               { emoji: '🔥', label: 'Fire' },

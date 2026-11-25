@@ -464,10 +464,10 @@ export default function HabitsScreen() {
             {(
               [
                 { id: 'ALL', label: 'All Routines' },
-                { id: 'morning', label: '🌅 Morning' },
-                { id: 'afternoon', label: '☀️ Afternoon' },
-                { id: 'evening', label: '🌙 Evening' },
-                { id: 'anytime', label: '⚡ Anytime' },
+                { id: 'morning', label: 'Morning' },
+                { id: 'afternoon', label: 'Afternoon' },
+                { id: 'evening', label: 'Evening' },
+                { id: 'anytime', label: 'Anytime' },
               ] as const
             ).map((item) => (
               <TouchableOpacity
@@ -828,14 +828,14 @@ export default function HabitsScreen() {
               )}
 
               {/* Time of Day Routine Picker */}
-              <Text style={styles.fieldLabel}>TIME OF DAY</Text>
+              <Text style={styles.fieldLabel}>Time of Day</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
                 {(
                   [
-                    { id: 'morning', label: '🌅 Morning' },
-                    { id: 'afternoon', label: '☀️ Afternoon' },
-                    { id: 'evening', label: '🌙 Evening' },
-                    { id: 'anytime', label: '⚡ Anytime' },
+                    { id: 'morning', label: 'Morning' },
+                    { id: 'afternoon', label: 'Afternoon' },
+                    { id: 'evening', label: 'Evening' },
+                    { id: 'anytime', label: 'Anytime' },
                   ] as const
                 ).map((t) => (
                   <TouchableOpacity

@@ -53,8 +53,8 @@ export default function BillingScreen() {
     const updated = await guardianService.upgradeSubscription(tier, cycle);
     setSubscription(updated);
     Alert.alert(
-      '🌟 Subscription Updated!',
-      `You are now active on the ${tier.toUpperCase()} plan. Thank you for empowering your focus.`
+      'Subscription Updated',
+      `You are now active on the ${tier.toUpperCase()} plan.`
     );
   };
 

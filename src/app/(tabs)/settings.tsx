@@ -717,18 +717,27 @@ export default function SettingsScreen() {
             justifyContent: 'space-around'
           }}>
             <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#F59E0B' }}>🔥 {todayReels}</Text>
-              <Text style={{ fontSize: 10, color: '#94A3B8' }}>Reels Today</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Ionicons name="flame" size={15} color="#F59E0B" />
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#F59E0B' }}>{todayReels}</Text>
+              </View>
+              <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Reels Today</Text>
             </View>
             <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
             <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#38BDF8' }}>🧠 {brainStateScore}%</Text>
-              <Text style={{ fontSize: 10, color: '#94A3B8' }}>Brain State</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Ionicons name="speedometer-outline" size={15} color="#38BDF8" />
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#38BDF8' }}>{brainStateScore}%</Text>
+              </View>
+              <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Brain State</Text>
             </View>
             <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
             <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#00E699' }}>🎯 {reelDailyBudget}</Text>
-              <Text style={{ fontSize: 10, color: '#94A3B8' }}>Daily Target</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Ionicons name="flag-outline" size={15} color="#00E699" />
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#00E699' }}>{reelDailyBudget}</Text>
+              </View>
+              <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Daily Target</Text>
             </View>
           </View>
 

@@ -803,8 +803,8 @@ export default function GhostLauncherScreen() {
           <Text style={[styles.clockDate, { color: themeStyles.subtext }]}>{dateStr}</Text>
           <Text style={[styles.intentionQuote, { color: themeStyles.subtext }]}>
             {profile === 'deep_focus'
-              ? '⚡ Deep Work Active: Non-essential dopamine apps are locked out.'
-              : '“Silence the noise. Master your attention.”'}
+              ? 'Deep Work Active • Essential apps only'
+              : `${apps.filter((a) => !a.isHidden).length} applications installed`}
           </Text>
         </View>
 
@@ -894,7 +894,7 @@ export default function GhostLauncherScreen() {
             <View style={styles.contactHeaderRow}>
               <Ionicons name="apps-sharp" size={14} color={themeStyles.subtext} />
               <Text style={[styles.contactHeaderText, { color: themeStyles.subtext }]}>
-                APPLICATIONS ({filteredApps.length})
+                Applications ({filteredApps.length})
               </Text>
             </View>
           )}
@@ -960,7 +960,7 @@ export default function GhostLauncherScreen() {
               <View style={styles.contactHeaderRow}>
                 <Ionicons name="people-sharp" size={14} color="#00E699" />
                 <Text style={[styles.contactHeaderText, { color: themeStyles.accent }]}>
-                  CONTACTS ({matchedContacts.length})
+                  Contacts ({matchedContacts.length})
                 </Text>
               </View>
 
@@ -1114,8 +1114,9 @@ export default function GhostLauncherScreen() {
         >
           <MaterialCommunityIcons name="shield-half-full" size={18} color={themeStyles.accent} />
           <Text style={[styles.exitText, { color: themeStyles.subtext }]}>
-            NeuroNinja Dojo & App Blocker →
+            NeuroNinja Dojo & App Blocker
           </Text>
+          <Ionicons name="chevron-forward" size={14} color={themeStyles.subtext} />
         </TouchableOpacity>
       </View>
 
@@ -1881,9 +1882,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   appCategory: {
-    fontSize: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontSize: 11,
+    fontWeight: '500',
     marginTop: 2,
   },
   rowControls: {

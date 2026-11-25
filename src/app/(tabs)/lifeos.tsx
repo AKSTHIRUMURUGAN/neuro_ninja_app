@@ -543,7 +543,7 @@ export default function LifeOSHubScreen() {
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.cloudBannerTitle}>Cloud Sync & Web Connect</Text>
             <Text style={styles.cloudBannerSub}>
-              Sync Journal, Notes & Finance seamlessly with your production web dashboard.
+              Direct encrypted sync with web dashboard for Journal, Notes & Finance.
             </Text>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={22} color="#64748B" />

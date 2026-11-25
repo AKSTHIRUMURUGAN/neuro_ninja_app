@@ -609,16 +609,16 @@ export default function NeuroBodyScreen() {
 
               {/* Neuro-Productivity & Workout Tips */}
               <View style={styles.neuroTipBox}>
-                <Text style={styles.neuroTipTitle}>🧠 Neuro-Cognitive Forecast</Text>
+                <Text style={styles.neuroTipTitle}>Neuro-Cognitive Forecast</Text>
                 <Text style={styles.neuroTipBody}>{womensHealth.phaseMeta.neuroTip}</Text>
-                <Text style={[styles.neuroTipTitle, { marginTop: 8 }]}>🏋️ Training & Nutrition Sync</Text>
+                <Text style={[styles.neuroTipTitle, { marginTop: 8 }]}>Training & Nutrition Sync</Text>
                 <Text style={styles.neuroTipBody}>{womensHealth.phaseMeta.workoutTip}</Text>
               </View>
             </View>
 
             {/* Period Quick Action */}
             <View style={styles.actionCard}>
-              <Text style={styles.sectionHeaderTitle}>🩸 Period Flow Tracking</Text>
+              <Text style={styles.sectionHeaderTitle}>Period Flow Tracking</Text>
               <View style={styles.periodToggleRow}>
                 <TouchableOpacity
                   style={[styles.periodToggleBtn, periodStartActive && styles.periodToggleBtnActive]}
@@ -681,7 +681,7 @@ export default function NeuroBodyScreen() {
 
             {/* Mood Matrix (8 Chips) */}
             <View style={styles.actionCard}>
-              <Text style={styles.sectionHeaderTitle}>🧘 Mind & Emotional State ({selectedMoods.length})</Text>
+              <Text style={styles.sectionHeaderTitle}>Mind & Emotional State ({selectedMoods.length})</Text>
               <View style={styles.chipsWrap}>
                 {CYCLE_MOODS.map((m) => {
                   const isSelected = selectedMoods.includes(m.id);
@@ -703,7 +703,7 @@ export default function NeuroBodyScreen() {
 
             {/* Vitals: BBT & Cervical Mucus */}
             <View style={styles.actionCard}>
-              <Text style={styles.sectionHeaderTitle}>🌡️ Basal Body Temp & Mucus</Text>
+              <Text style={styles.sectionHeaderTitle}>Basal Body Temp & Mucus</Text>
               <View style={styles.bbtRow}>
                 <View style={styles.bbtInputWrapper}>
                   <Text style={styles.inputFieldLabel}>BBT (°C)</Text>
@@ -784,7 +784,7 @@ export default function NeuroBodyScreen() {
 
             {/* Fasting Bio-Zones Reference */}
             <View style={styles.actionCard}>
-              <Text style={styles.sectionHeaderTitle}>🧬 Biological Autophagy Stages</Text>
+              <Text style={styles.sectionHeaderTitle}>Biological Autophagy Stages</Text>
               <View style={styles.bioStageList}>
                 <View style={styles.bioStageItem}>
                   <Text style={styles.bioStageEmoji}>🍽️</Text>

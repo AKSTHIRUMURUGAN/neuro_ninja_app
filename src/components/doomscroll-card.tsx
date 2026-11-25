@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { NinjaPalette } from '../constants/theme';
 import { doomscrollEngine, type DoomscrollDayReport } from '../services/doomscroll/doomscroll-engine';
 import { blockerEngine } from '../services/blocker/blocker-engine';
@@ -46,7 +46,7 @@ export function DoomscrollCard() {
             <MaterialCommunityIcons name="cellphone-nfc" size={20} color="#F43F5E" />
           </View>
           <View>
-            <Text style={styles.badge}>DOOMSCROLL INTELLIGENCE</Text>
+            <Text style={styles.badge}>Doomscroll Intelligence</Text>
             <Text style={styles.title}>Dopamine Loops</Text>
           </View>
         </View>
@@ -66,19 +66,31 @@ export function DoomscrollCard() {
       {/* Live Reels & Shorts Segregated Breakdown Strip (BrainPal & Doomy Parity) */}
       <View style={styles.reelsStrip}>
         <View style={styles.reelsCol}>
-          <Text style={styles.reelsNum}>🔥 {breakdown.total}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Ionicons name="flame" size={16} color="#F43F5E" />
+            <Text style={styles.reelsNum}>{breakdown.total}</Text>
+          </View>
           <Text style={styles.reelsLabel}>Total Short-Videos</Text>
           <View style={styles.platformBadgeRow}>
-            <Text style={styles.platformBadgeText}>📸 {breakdown.instagramReels} Reels</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Ionicons name="logo-instagram" size={12} color="#94A3B8" />
+              <Text style={styles.platformBadgeText}>{breakdown.instagramReels} Reels</Text>
+            </View>
             <Text style={styles.platformBadgeDivider}>•</Text>
-            <Text style={styles.platformBadgeText}>▶️ {breakdown.youtubeShorts} Shorts</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Ionicons name="logo-youtube" size={12} color="#94A3B8" />
+              <Text style={styles.platformBadgeText}>{breakdown.youtubeShorts} Shorts</Text>
+            </View>
           </View>
         </View>
         <View style={styles.stripDivider} />
         <View style={styles.reelsCol}>
-          <Text style={[styles.reelsNum, { color: brainScore < 60 ? '#EF4444' : '#38BDF8' }]}>
-            🧠 {brainScore}%
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Ionicons name="speedometer-outline" size={16} color={brainScore < 60 ? '#EF4444' : '#38BDF8'} />
+            <Text style={[styles.reelsNum, { color: brainScore < 60 ? '#EF4444' : '#38BDF8' }]}>
+              {brainScore}%
+            </Text>
+          </View>
           <Text style={styles.reelsLabel}>Brain State Reserve</Text>
           <Text style={styles.platformBadgeSubText}>
             {brainScore >= 80 ? 'Zen Mind' : brainScore >= 50 ? 'Dopamine Strain' : 'Brainrot Hazard'}
@@ -213,9 +225,8 @@ const styles = StyleSheet.create({
   },
   badge: {
     color: '#F43F5E',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    fontSize: 11,
+    fontWeight: '700',
   },
   title: {
     fontSize: 18,

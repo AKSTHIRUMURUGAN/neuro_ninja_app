@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 8,
   },
-  alarmTime: { fontSize: 36, fontWeight: '900', color: '#F8FAFC', letterSpacing: 2 },
+  alarmTime: { fontSize: 36, fontWeight: '900', color: '#F8FAFC', letterSpacing: 0.5, fontVariant: ['tabular-nums'] },
   alarmTitle: { fontSize: 17, fontWeight: '800', color: '#EF4444', marginTop: 2 },
   alarmSub: { fontSize: 12, color: '#94A3B8', textAlign: 'center', marginTop: 2 },
   missionArea: { flex: 1, justifyContent: 'center' },

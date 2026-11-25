@@ -13,11 +13,11 @@ import type { GameCategory } from '../../../services/games/game-types';
 
 const CATEGORIES: { label: string; value: GameCategory | 'all' }[] = [
   { label: 'All Games', value: 'all' },
-  { label: 'Viral Logic 👑', value: 'logic' },
-  { label: 'Speed & Reflex ⚡', value: 'speed' },
-  { label: 'Mental Math ➕', value: 'math' },
-  { label: 'Memory 🎴', value: 'memory' },
-  { label: 'Chess Tactics ♟️', value: 'chess' },
+  { label: 'Viral Logic', value: 'logic' },
+  { label: 'Speed & Reflex', value: 'speed' },
+  { label: 'Mental Math', value: 'math' },
+  { label: 'Memory', value: 'memory' },
+  { label: 'Chess Tactics', value: 'chess' },
 ];
 
 export default function ArenaIndexScreen() {

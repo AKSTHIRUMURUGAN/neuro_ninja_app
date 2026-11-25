@@ -107,7 +107,7 @@ export default function SafeInternetGuardianScreen() {
           if (started) {
             setIsVpnActive(true);
             showToast({
-              title: '🛡️ Shield Activated!',
+              title: 'Shield Activated',
               message: 'Local DNS firewall routing through Cloudflare Family 1.1.1.3.',
               type: 'success',
               icon: 'shield-check',
@@ -146,9 +146,9 @@ export default function SafeInternetGuardianScreen() {
 
     setTimeout(() => {
       setIsTesting(false);
-      setTestResult('INTERCEPTED: adult-content-sample.invalid ➔ 0.0.0.0 (sub-12ms synthetic drop)');
+      setTestResult('Intercepted: adult-content-sample.invalid to 0.0.0.0 (sub-12ms synthetic drop)');
       showToast({
-        title: '✅ Shield Test Passed',
+        title: 'Shield Test Passed',
         message: 'Adult DNS threat synthetically nullified with 0 byte leak.',
         type: 'success',
         icon: 'shield-check',
