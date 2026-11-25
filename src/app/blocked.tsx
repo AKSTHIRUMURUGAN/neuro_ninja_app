@@ -36,6 +36,7 @@ import { SchulteGrid } from '../components/dojo/schulte-grid';
 import { logIntruderAttempt } from '../services/intruder-audit';
 import { getTodayKey } from '../services/storage';
 import { launchApplication } from '../services/launcher/launcher-service';
+import { blockerEngine } from '../services/blocker/blocker-engine';
 
 export type UnlockTab = 'pattern' | 'pin' | 'biometric' | 'gate' | 'reels' | 'replace' | 'qr';
 
@@ -177,6 +178,17 @@ export default function BlockedScreen() {
 
     // Villain counterattack when breaching a sealed app!
     void villainEngine.takeCounterDamage(30, appName).catch(() => {});
+
+    // Ensure on-demand accessibility is active if entering YouTube / Instagram
+    const shortVideoPackages = [
+      'com.instagram.android',
+      'com.google.android.youtube',
+      'com.zhiliaoapp.musically',
+      'com.snapchat.android',
+    ];
+    if (pkgName && shortVideoPackages.some((p) => pkgName.includes(p))) {
+      blockerEngine.setAccessibilityServiceEnabled(true);
+    }
 
     if (Platform.OS === 'android' && pkgName && pkgName !== 'unknown.app') {
       launchApplication(pkgName);

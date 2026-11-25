@@ -348,13 +348,37 @@ export default function DojoScreen() {
             <Text style={styles.cardSub}>JEE, NEET, UPSC Rooms</Text>
           </TouchableOpacity>
 
-          {/* 9. Family Safety */}
+          {/* 9. Battle Arenas (Web Parity) */}
+          <TouchableOpacity
+            style={styles.arsenalCard}
+            onPress={() => router.push({ pathname: '/(tabs)/challenges', params: { tab: 'arenas' } } as any)}
+          >
+            <View style={[styles.cardIconBox, { backgroundColor: 'rgba(234, 88, 12, 0.15)' }]}>
+              <MaterialCommunityIcons name="sword-cross" size={24} color="#F97316" />
+            </View>
+            <Text style={styles.cardLabel}>Battle Arenas</Text>
+            <Text style={styles.cardSub}>Stakes & Challenges</Text>
+          </TouchableOpacity>
+
+          {/* 10. Safe Internet Guardian (CleanBrowsing DNS Shield) */}
+          <TouchableOpacity
+            style={styles.arsenalCard}
+            onPress={() => router.push('/guardian' as any)}
+          >
+            <View style={[styles.cardIconBox, { backgroundColor: 'rgba(0, 230, 153, 0.15)' }]}>
+              <MaterialCommunityIcons name="shield-check" size={24} color="#00E699" />
+            </View>
+            <Text style={styles.cardLabel}>Safe Internet</Text>
+            <Text style={styles.cardSub}>DNS Threat Firewall</Text>
+          </TouchableOpacity>
+
+          {/* 11. Family Safety */}
           <TouchableOpacity
             style={styles.arsenalCard}
             onPress={() => router.push('/family' as any)}
           >
             <View style={[styles.cardIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-              <MaterialCommunityIcons name="shield-account-outline" size={24} color="#00E699" />
+              <MaterialCommunityIcons name="shield-account-outline" size={24} color="#10B981" />
             </View>
             <Text style={styles.cardLabel}>Family Safety</Text>
             <Text style={styles.cardSub}>Curfews & Supervision</Text>

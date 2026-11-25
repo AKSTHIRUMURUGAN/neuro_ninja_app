@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import { useNinja } from '../../context/ninja-context';
 import { useNinjaAlert } from '../../context/ninja-alert-context';
@@ -23,6 +23,8 @@ import { PrivacyVault } from '../../components/privacy-vault';
 import { PatternSetupModal } from '../../components/pattern-setup-modal';
 import { PinSetupModal } from '../../components/pin-setup-modal';
 import { StealthCalculator } from '../../components/vault/stealth-calculator';
+import { ProminentDisclosureModal } from '../../components/ProminentDisclosureModal';
+import { OemBackgroundGuideModal } from '../../components/OemBackgroundGuideModal';
 import {
   loadVaultConfig,
   saveVaultConfig,
@@ -57,9 +59,33 @@ export default function SettingsScreen() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [vaultConfig, setVaultConfig] = useState<VaultConfig | null>(null);
   const [showCalculatorModal, setShowCalculatorModal] = useState(false);
+  const [showDisclosureModal, setShowDisclosureModal] = useState(false);
+  const [showOemGuideModal, setShowOemGuideModal] = useState(false);
   const [floatingHudEnabled, setFloatingHudEnabled] = useState(true);
   const [accessibilityRunning, setAccessibilityRunning] = useState(false);
   const [hudAlertMins, setHudAlertMins] = useState(5);
+  const [surgicalReelsBlockEnabled, setSurgicalReelsBlockEnabled] = useState(false);
+  const [reelDailyBudget, setReelDailyBudget] = useState(30);
+  const [todayReels, setTodayReels] = useState(0);
+  const [brainStateScore, setBrainStateScore] = useState(100);
+
+  const refreshReelsState = useCallback(() => {
+    if (Platform.OS === 'android') {
+      setAccessibilityRunning(blockerEngine.isAccessibilityServiceRunning());
+      setFloatingHudEnabled(blockerEngine.isFloatingHudEnabled());
+      setSurgicalReelsBlockEnabled(blockerEngine.isSurgicalReelsBlockEnabled());
+      setReelDailyBudget(blockerEngine.getReelDailyBudget());
+      setTodayReels(blockerEngine.getTodayReelsCount());
+      setBrainStateScore(blockerEngine.getBrainStateScore());
+    }
+  }, [
+    setAccessibilityRunning,
+    setFloatingHudEnabled,
+    setSurgicalReelsBlockEnabled,
+    setReelDailyBudget,
+    setTodayReels,
+    setBrainStateScore,
+  ]);
 
   useEffect(() => {
     void (async () => {
@@ -67,10 +93,39 @@ export default function SettingsScreen() {
       setIntruderLogs(logs);
       const vc = await loadVaultConfig();
       setVaultConfig(vc);
-      setFloatingHudEnabled(blockerEngine.isFloatingHudEnabled());
-      setAccessibilityRunning(blockerEngine.isAccessibilityServiceRunning());
+      refreshReelsState();
     })();
-  }, []);
+  }, [refreshReelsState]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshReelsState();
+    }, [refreshReelsState])
+  );
+
+  const handleToggleSurgicalReels = (val: boolean) => {
+    setSurgicalReelsBlockEnabled(val);
+    blockerEngine.setSurgicalReelsBlockEnabled(val);
+    showToast({
+      title: val ? 'Surgical Reels Blocker Armed' : 'Surgical Reels Blocker Off',
+      message: val
+        ? 'Instagram Reels & YouTube Shorts auto-back out. Chats & normal videos remain open!'
+        : 'Reels and Shorts will not be blocked.',
+      type: val ? 'shield' : 'info',
+      icon: 'movie-off-outline',
+    });
+  };
+
+  const handleSelectReelBudget = (budget: number) => {
+    setReelDailyBudget(budget);
+    blockerEngine.setReelDailyBudget(budget);
+    showToast({
+      title: 'Daily Reel Cap Updated',
+      message: `Daily target set to ${budget} Reels before critical alert.`,
+      type: 'info',
+      icon: 'bullseye-arrow',
+    });
+  };
 
   const handleToggleFloatingHud = (val: boolean) => {
     setFloatingHudEnabled(val);
@@ -179,6 +234,30 @@ export default function SettingsScreen() {
             </View>
           ) : (
             <>
+              {/* Permission 1: Reels & Shorts Guardian (Accessibility) */}
+              <View style={styles.row}>
+                <MaterialCommunityIcons
+                  name={androidDetails?.accessibility ? 'check-circle' : 'alert-circle'}
+                  size={22}
+                  color={androidDetails?.accessibility ? NinjaPalette.emerald : '#60A5FA'}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>Reels &amp; Shorts Guardian</Text>
+                  <Text style={styles.rowSub}>
+                    {androidDetails?.accessibility ? 'Active & Monitoring' : 'Accessibility Required'}
+                  </Text>
+                </View>
+                {!androidDetails?.accessibility && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { borderColor: '#60A5FA', backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}
+                    onPress={() => setShowDisclosureModal(true)}
+                  >
+                    <Text style={[styles.actionBtnText, { color: '#60A5FA' }]}>Enable</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Permission 2: Display Over Other Apps */}
               <View style={styles.row}>
                 <MaterialCommunityIcons
                   name={androidDetails?.overlay ? 'check-circle' : 'alert-circle'}
@@ -201,6 +280,7 @@ export default function SettingsScreen() {
                 )}
               </View>
 
+              {/* Permission 3: Usage Access */}
               <View style={styles.row}>
                 <MaterialCommunityIcons
                   name={androidDetails?.usageStats ? 'check-circle' : 'alert-circle'}
@@ -222,6 +302,63 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+
+              {/* Permission 4: Notification Guard */}
+              <View style={styles.row}>
+                <MaterialCommunityIcons
+                  name={androidDetails?.notificationListener ? 'check-circle' : 'alert-circle'}
+                  size={22}
+                  color={androidDetails?.notificationListener ? NinjaPalette.emerald : '#EC4899'}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>Notification Guard</Text>
+                  <Text style={styles.rowSub}>
+                    {androidDetails?.notificationListener ? 'Shielding Active' : 'Listener Disabled'}
+                  </Text>
+                </View>
+                {!androidDetails?.notificationListener && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { borderColor: '#EC4899', backgroundColor: 'rgba(236, 72, 153, 0.15)' }]}
+                    onPress={() => blockerEngine.openNotificationListenerSettings()}
+                  >
+                    <Text style={[styles.actionBtnText, { color: '#EC4899' }]}>Enable</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Permission 5: Background Battery Exemption */}
+              <View style={styles.row}>
+                <MaterialCommunityIcons
+                  name={androidDetails?.batteryOptimization ? 'check-circle' : 'alert-circle'}
+                  size={22}
+                  color={androidDetails?.batteryOptimization ? NinjaPalette.emerald : '#38BDF8'}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>Background Protection</Text>
+                  <Text style={styles.rowSub}>
+                    {androidDetails?.batteryOptimization ? 'Unrestricted / Safe' : 'Optimized (May be killed)'}
+                  </Text>
+                </View>
+                {!androidDetails?.batteryOptimization && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { borderColor: '#38BDF8', backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}
+                    onPress={() => blockerEngine.requestIgnoreBatteryOptimization()}
+                  >
+                    <Text style={[styles.actionBtnText, { color: '#38BDF8' }]}>Allow</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* OEM Autostart Guide Button */}
+              <TouchableOpacity
+                style={styles.oemGuideBtn}
+                onPress={() => setShowOemGuideModal(true)}
+              >
+                <MaterialCommunityIcons name="cellphone-cog" size={18} color="#60A5FA" />
+                <Text style={styles.oemGuideBtnText}>
+                  OEM Background Protection Guide ({blockerEngine.getDeviceManufacturer().toUpperCase()})
+                </Text>
+              </TouchableOpacity>
             </>
           )}
 
@@ -549,12 +686,12 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Floating Doomscroll HUD Widget (Regain / StayFree Parity) */}
+        {/* Floating Reels & Short-Video Guardian (Competitor Parity: Doomy, Brainrot, SaneScroll) */}
         <View style={styles.card}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <MaterialCommunityIcons name="television-guide" size={20} color="#00E699" />
-              <Text style={styles.cardHeading}>FLOATING DOOMSCROLL HUD</Text>
+              <MaterialCommunityIcons name="movie-outline" size={20} color="#00E699" />
+              <Text style={styles.cardHeading}>REELS & SHORT-VIDEO GUARDIAN</Text>
             </View>
             <Switch
               value={floatingHudEnabled}
@@ -564,20 +701,108 @@ export default function SettingsScreen() {
             />
           </View>
           <Text style={styles.delaySub}>
-            Floats a compact, draggable Dynamic Island pill over Instagram, YouTube & Shorts with live session timer, scroll counter, and mindful break cards.
+            Floats a draggable edge-snapping pill with reactive Kage mascot, 2-second view threshold, Brain State meter, and mindful breath interruptions.
           </Text>
 
-          {/* Alert Thresholds */}
+          {/* Live Reel Tracker Metrics Strip */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#070A11',
+            borderRadius: 12,
+            padding: 10,
+            marginTop: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.06)',
+            justifyContent: 'space-around'
+          }}>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#F59E0B' }}>🔥 {todayReels}</Text>
+              <Text style={{ fontSize: 10, color: '#94A3B8' }}>Reels Today</Text>
+            </View>
+            <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#38BDF8' }}>🧠 {brainStateScore}%</Text>
+              <Text style={{ fontSize: 10, color: '#94A3B8' }}>Brain State</Text>
+            </View>
+            <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#00E699' }}>🎯 {reelDailyBudget}</Text>
+              <Text style={{ fontSize: 10, color: '#94A3B8' }}>Daily Target</Text>
+            </View>
+          </View>
+
+          {/* Feature 1: Surgical Reels & Shorts Auto-Block (Sane Scrolling & StopScroll Parity) */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#0B132B',
+            borderRadius: 12,
+            padding: 12,
+            marginTop: 12,
+            borderWidth: 1,
+            borderColor: 'rgba(56, 189, 248, 0.2)'
+          }}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MaterialCommunityIcons name="movie-off-outline" size={16} color="#38BDF8" />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#F8FAFC' }}>
+                  Surgically Block Reels & Shorts
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                Instantly exits Reels & Shorts into home feed. Instagram DMs, posts, and regular YouTube videos remain 100% accessible!
+              </Text>
+            </View>
+            <Switch
+              value={surgicalReelsBlockEnabled}
+              onValueChange={handleToggleSurgicalReels}
+              thumbColor={surgicalReelsBlockEnabled ? '#38BDF8' : '#64748B'}
+              trackColor={{ false: '#334155', true: '#0C4A6E' }}
+            />
+          </View>
+
+          {/* Feature 2: Daily Reel Cap Targets (ReelCounter Parity) */}
           <View style={[styles.delayConfigBox, { marginTop: 12 }]}>
-            <Text style={styles.delayTitle}>Nudge Alert Threshold</Text>
+            <Text style={styles.delayTitle}>Daily Reel Target Cap</Text>
             <Text style={styles.delaySub}>
-              Flashes warning amber & haptic pulse when doomscroll limits are hit.
+              Sets daily boundary before critical dopamine shield fracture warning.
             </Text>
             <View style={styles.delayTabs}>
               {[
-                { label: '3m (12 scrolls)', mins: 3 },
-                { label: '5m (20 scrolls)', mins: 5 },
-                { label: '10m (40 scrolls)', mins: 10 },
+                { label: '15 Reels', count: 15 },
+                { label: '30 Reels', count: 30 },
+                { label: '45 Reels', count: 45 },
+                { label: '60 Reels', count: 60 },
+              ].map((opt) => {
+                const isSelected = reelDailyBudget === opt.count;
+                return (
+                  <TouchableOpacity
+                    key={opt.count}
+                    style={[styles.delayTab, isSelected && styles.delayTabActive]}
+                    onPress={() => handleSelectReelBudget(opt.count)}
+                  >
+                    <Text style={[styles.delayTabText, isSelected && styles.delayTabTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Feature 3: Periodic Break Nudge Alerts */}
+          <View style={[styles.delayConfigBox, { marginTop: 12 }]}>
+            <Text style={styles.delayTitle}>Periodic Break Nudges</Text>
+            <Text style={styles.delaySub}>
+              Tactile pulse & mindful reality check after continuous scrolling.
+            </Text>
+            <View style={styles.delayTabs}>
+              {[
+                { label: '3m (12 reels)', mins: 3 },
+                { label: '5m (20 reels)', mins: 5 },
+                { label: '10m (40 reels)', mins: 10 },
               ].map((opt) => {
                 const isSelected = hudAlertMins === opt.mins;
                 return (
@@ -595,7 +820,7 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Accessibility Service Status */}
+          {/* Accessibility Service Status & 2-Second Filter Intimation */}
           <TouchableOpacity
             style={[styles.actionRow, { borderBottomWidth: 0, marginTop: 8 }]}
             onPress={() => blockerEngine.openAccessibilitySettings()}
@@ -608,16 +833,35 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.actionRowTitle}>
                 {accessibilityRunning
-                  ? 'Precision Reel Tracking Active'
+                  ? 'Precision Reel Guardian Active (2s Threshold)'
                   : 'Enable Exact Scroll Counter'}
               </Text>
               <Text style={styles.actionRowSub}>
                 {accessibilityRunning
-                  ? 'Detecting real vertical scroll events in Instagram and YouTube'
-                  : 'Currently in Smart-Pacing mode. Tap to grant Accessibility for exact reel count.'}
+                  ? 'Filtering accidental flings with 2-second dwell threshold across Reels, Shorts & TikTok'
+                  : 'Tap to grant Accessibility for exact reel count & surgical auto-blocking.'}
               </Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={20} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Safe Internet Guardian & System-Wide DNS Protection */}
+        <View style={styles.card}>
+          <Text style={styles.cardHeading}>SAFE INTERNET & CONTENT FILTERING</Text>
+
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={() => router.push('/guardian' as any)}
+          >
+            <MaterialCommunityIcons name="shield-check" size={22} color={NinjaPalette.emerald} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionRowTitle}>Safe Internet Guardian</Text>
+              <Text style={styles.actionRowSub}>
+                System-wide DNS firewall, CleanBrowsing adult filter & malware defense
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#64748B" />
           </TouchableOpacity>
         </View>
 
@@ -654,7 +898,7 @@ export default function SettingsScreen() {
 
           <TouchableOpacity
             style={styles.actionRow}
-            onPress={() => router.push('/onboarding' as any)}
+            onPress={() => router.replace('/onboarding' as any)}
           >
             <MaterialCommunityIcons name="compass" size={22} color={NinjaPalette.cyan} />
             <View style={{ flex: 1 }}>
@@ -672,6 +916,22 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Google Play Prominent Disclosure Modal */}
+      <ProminentDisclosureModal
+        visible={showDisclosureModal}
+        onAgree={() => {
+          setShowDisclosureModal(false);
+          blockerEngine.openAccessibilitySettings();
+        }}
+        onDecline={() => setShowDisclosureModal(false)}
+      />
+
+      {/* OEM Device Background Protection Guide Modal */}
+      <OemBackgroundGuideModal
+        visible={showOemGuideModal}
+        onClose={() => setShowOemGuideModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -946,5 +1206,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 260,
     lineHeight: 16,
+  },
+  oemGuideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(96, 165, 250, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.25)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  oemGuideBtnText: {
+    color: '#60A5FA',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
 });

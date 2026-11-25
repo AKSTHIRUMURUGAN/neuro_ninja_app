@@ -1,4 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  scheduleSmartReminderNotification,
+  cancelSmartReminderNotification,
+} from './smart-reminder-engine';
 
 export type ReminderCategory = 'water' | 'break' | 'sleep' | 'movement' | 'study';
 
@@ -77,8 +81,32 @@ export async function saveReminders(reminders: SmartReminder[]): Promise<void> {
 
 export async function toggleReminder(id: string): Promise<SmartReminder[]> {
   const current = await getReminders();
+  const target = current.find((r) => r.id === id);
   const updated = current.map((r) => (r.id === id ? { ...r, isEnabled: !r.isEnabled } : r));
   await saveReminders(updated);
+
+  if (target) {
+    if (!target.isEnabled) {
+      // It was disabled, now enabled -> schedule
+      await scheduleSmartReminderNotification({ ...target, isEnabled: true });
+    } else {
+      // It was enabled, now disabled -> cancel
+      await cancelSmartReminderNotification(target.id);
+    }
+  }
+
   return updated;
 }
+
+export async function syncAllActiveReminders(): Promise<void> {
+  const list = await getReminders();
+  for (const r of list) {
+    if (r.isEnabled) {
+      await scheduleSmartReminderNotification(r);
+    } else {
+      await cancelSmartReminderNotification(r.id);
+    }
+  }
+}
+
 

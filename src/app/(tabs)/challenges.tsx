@@ -9,16 +9,23 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import { useNinja } from '../../context/ninja-context';
 import { NinjaPalette } from '../../constants/theme';
 import type { ChallengeType } from '../../services/storage';
 
+import RealMoneyDareSection from '../../components/RealMoneyDareSection';
+import BattleArenaSection from '../../components/challenges/BattleArenaSection';
+
 const PASS_OPTIONS = [5, 10, 15, 20];
 
 export default function ChallengesScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [userSelectedTab, setUserSelectedTab] = React.useState<'dare' | 'arenas' | 'gates' | null>(null);
+  const activeTab = userSelectedTab ?? (params.tab === 'arenas' ? 'arenas' : params.tab === 'gates' ? 'gates' : 'dare');
+  const setActiveTab = (t: 'dare' | 'arenas' | 'gates') => setUserSelectedTab(t);
   const {
     settings,
     setChallengeType,
@@ -34,15 +41,92 @@ export default function ChallengesScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
-          <Text style={styles.badge}>MINDFUL FRICTION</Text>
-          <Text style={styles.title}>Focus Gates</Text>
+          <Text style={styles.badge}>ACCOUNTABILITY & FRICTION</Text>
+          <Text style={styles.title}>
+            {activeTab === 'dare'
+              ? 'Real-Money Dares ⚡'
+              : activeTab === 'arenas'
+              ? 'Battle Arenas ⚔️'
+              : 'Focus Gates 🧘'}
+          </Text>
           <Text style={styles.subtitle}>
-            Choose what challenge confronts you when you attempt to open a sealed app.
+            {activeTab === 'dare'
+              ? 'Lock real INR in escrow via Razorpay. Stay under your daily doomscroll limits or forfeit your stake!'
+              : activeTab === 'arenas'
+              ? 'Multiplayer accountability arenas. Compete with peers, stake coins/INR on habits and tasks.'
+              : 'Choose what psychological challenge confronts you when attempting to unlock a sealed app.'}
           </Text>
         </View>
 
-        {/* Gate Option 1: Zen Breathwork */}
-        <TouchableOpacity
+        {/* Tab Switcher: 3 Tabs */}
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'dare' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('dare')}
+          >
+            <MaterialCommunityIcons
+              name="lightning-bolt"
+              size={15}
+              color={activeTab === 'dare' ? '#070A11' : NinjaPalette.textSecondary}
+            />
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === 'dare' && styles.tabButtonTextActive,
+              ]}
+              numberOfLines={1}
+            >
+              Dares ⚡
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'arenas' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('arenas')}
+          >
+            <MaterialCommunityIcons
+              name="sword-cross"
+              size={15}
+              color={activeTab === 'arenas' ? '#070A11' : NinjaPalette.textSecondary}
+            />
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === 'arenas' && styles.tabButtonTextActive,
+              ]}
+              numberOfLines={1}
+            >
+              Arenas ⚔️
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'gates' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('gates')}
+          >
+            <MaterialCommunityIcons
+              name="shield-lock-outline"
+              size={15}
+              color={activeTab === 'gates' ? '#070A11' : NinjaPalette.textSecondary}
+            />
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === 'gates' && styles.tabButtonTextActive,
+              ]}
+              numberOfLines={1}
+            >
+              Gates 🧘
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === 'dare' && <RealMoneyDareSection />}
+        {activeTab === 'arenas' && <BattleArenaSection />}
+        {activeTab === 'gates' && (
+          <>
+            {/* Gate Option 1: Zen Breathwork */}
+            <TouchableOpacity
           style={[
             styles.gateCard,
             settings.activeChallenge === 'breathwork' && styles.gateCardSelected,
@@ -375,6 +459,8 @@ export default function ChallengesScreen() {
           <MaterialCommunityIcons name="play-circle" size={20} color="#070A11" />
           <Text style={styles.previewButtonText}>Practice Active Gate</Text>
         </TouchableOpacity>
+        </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -390,7 +476,37 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#0F1829',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  tabButtonActive: {
+    backgroundColor: NinjaPalette.emerald,
+  },
+  tabButtonText: {
+    color: NinjaPalette.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tabButtonTextActive: {
+    color: '#070A11',
+    fontWeight: '900',
   },
   badge: {
     color: NinjaPalette.emerald,

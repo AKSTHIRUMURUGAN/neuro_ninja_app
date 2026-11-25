@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,11 @@ import {
   Switch,
   ActivityIndicator,
   BackHandler,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -29,6 +30,15 @@ import {
   openNormalLauncherSettings,
   launchApplication,
 } from '../../services/launcher/launcher-service';
+import {
+  searchContacts,
+  callContact,
+  openWhatsAppChat,
+  sendSmsToContact,
+  isContactPermissionGranted,
+  requestContactsPermission,
+  type QuickContact,
+} from '../../services/launcher/contact-search-service';
 
 export interface GhostApp {
   id: string;
@@ -120,6 +130,45 @@ export default function GhostLauncherScreen() {
   const [isLoadingApps, setIsLoadingApps] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [matchedContacts, setMatchedContacts] = useState<QuickContact[]>([]);
+  const [hasContactsPermission, setHasContactsPermission] = useState<boolean>(true);
+
+  // Check initial contact permission
+  useEffect(() => {
+    void (async () => {
+      const granted = await isContactPermissionGranted();
+      setHasContactsPermission(granted);
+    })();
+  }, []);
+
+  // Fast Contact Search on search query changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!searchQuery.trim()) {
+        setMatchedContacts([]);
+        return;
+      }
+      void (async () => {
+        const granted = await isContactPermissionGranted();
+        setHasContactsPermission(granted);
+        if (granted) {
+          const results = await searchContacts(searchQuery);
+          setMatchedContacts(results);
+        }
+      })();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Inverted Accessibility Architecture:
+  // When in Ghost Launcher / Home, ensure Accessibility is OFF so Google Pay / UPI are never blocked!
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS === 'android') {
+        blockerEngine.setAccessibilityServiceEnabled(false);
+      }
+    }, [])
+  );
 
   // Android Launcher State
   const [isDefaultLauncher, setIsDefaultLauncher] = useState<boolean>(false);
@@ -243,14 +292,13 @@ export default function GhostLauncherScreen() {
     };
   }, []);
 
-  // Load Real Installed Applications (Optimized for 0ms Boot & ANR Prevention)
-  useEffect(() => {
-    let isMounted = true;
-    void (async () => {
-      try {
-        // Step 1: Instant hydration from persistent local cache (0ms first frame render)
+  // Load Real Installed Applications (Optimized for 0ms Boot & ANR Prevention, auto-refreshed for newly installed apps)
+  const loadInstalledApps = useCallback(async (forceRefresh = false) => {
+    try {
+      // Step 1: Instant hydration from persistent local cache on cold start
+      if (!forceRefresh) {
         const cachedRaw = await AsyncStorage.getItem('@ghost_launcher_cached_apps_v3');
-        if (cachedRaw && isMounted) {
+        if (cachedRaw) {
           try {
             const cachedList: GhostApp[] = JSON.parse(cachedRaw);
             if (cachedList && cachedList.length > 0) {
@@ -259,71 +307,65 @@ export default function GhostLauncherScreen() {
             }
           } catch {}
         }
-
-        // Step 2: Ultra-fast native metadata query (includeIcons = false avoids Base64 PNG encoding on boot)
-        const [installedApps, savedPrefsRaw] = await Promise.all([
-          blockerEngine.getInstalledApps(false),
-          AsyncStorage.getItem('@ghost_launcher_user_prefs_v2'),
-        ]);
-
-        const savedPrefs = savedPrefsRaw
-          ? JSON.parse(savedPrefsRaw)
-          : { favorites: [], aliases: {}, hidden: [], delays: {} };
-
-        if (savedPrefs.delays) {
-          setDelayConfigs(savedPrefs.delays);
-        }
-
-        const builtInPortals: GhostApp[] = [
-          {
-            id: 'portal_study',
-            packageName: 'builtin.study_portal',
-            name: 'YouTube Study Mode (Shorts Blocked)',
-            category: 'Study',
-            isFavorite: true,
-            isHidden: false,
-          },
-          {
-            id: 'portal_arcade',
-            packageName: 'builtin.dojo_brain',
-            name: 'Ninja Brain Arcade',
-            category: 'Study',
-            isFavorite: true,
-            isHidden: false,
-          },
-        ];
-
-        const realAppItems: GhostApp[] = (installedApps || []).map((app) => ({
-          id: app.packageName,
-          packageName: app.packageName,
-          name: app.name,
-          customName: savedPrefs.aliases?.[app.packageName],
-          category: inferCategory(app.packageName, app.name),
-          isFavorite: savedPrefs.favorites?.includes(app.packageName) ?? false,
-          isHidden: savedPrefs.hidden?.includes(app.packageName) ?? false,
-          iconBase64: null,
-        }));
-
-        const combinedApps = [...builtInPortals, ...realAppItems];
-
-        if (isMounted) {
-          setApps(combinedApps);
-          setIsLoadingApps(false);
-          // Persist to cache for instantaneous cold-boot display
-          void AsyncStorage.setItem('@ghost_launcher_cached_apps_v3', JSON.stringify(combinedApps));
-        }
-      } catch (err) {
-        console.warn('Failed to load installed apps for ghost launcher:', err);
-        if (isMounted) {
-          setIsLoadingApps(false);
-        }
       }
-    })();
 
-    return () => {
-      isMounted = false;
-    };
+      // Step 2: Fresh query from native PackageManager
+      const [installedApps, savedPrefsRaw] = await Promise.all([
+        blockerEngine.getInstalledApps(false),
+        AsyncStorage.getItem('@ghost_launcher_user_prefs_v2'),
+      ]);
+
+      const savedPrefs = savedPrefsRaw
+        ? JSON.parse(savedPrefsRaw)
+        : { favorites: [], aliases: {}, hidden: [], delays: {} };
+
+      if (savedPrefs.delays) {
+        setDelayConfigs(savedPrefs.delays);
+      }
+
+      const builtInPortals: GhostApp[] = [
+        {
+          id: 'portal_study',
+          packageName: 'builtin.study_portal',
+          name: 'YouTube Study Mode (Shorts Blocked)',
+          category: 'Study',
+          isFavorite: true,
+          isHidden: false,
+        },
+        {
+          id: 'portal_arcade',
+          packageName: 'builtin.dojo_brain',
+          name: 'Ninja Brain Arcade',
+          category: 'Study',
+          isFavorite: true,
+          isHidden: false,
+        },
+      ];
+
+      const realAppItems: GhostApp[] = (installedApps || []).map((app) => ({
+        id: app.packageName,
+        packageName: app.packageName,
+        name: app.name,
+        customName: savedPrefs.aliases?.[app.packageName],
+        category: inferCategory(app.packageName, app.name),
+        isFavorite: savedPrefs.favorites?.includes(app.packageName) ?? false,
+        isHidden: savedPrefs.hidden?.includes(app.packageName) ?? false,
+        iconBase64: null,
+      }));
+
+      const combinedApps = [...builtInPortals, ...realAppItems];
+      setApps(combinedApps);
+      setIsLoadingApps(false);
+      void AsyncStorage.setItem('@ghost_launcher_cached_apps_v3', JSON.stringify(combinedApps));
+    } catch (err) {
+      console.warn('Failed to load installed apps for ghost launcher:', err);
+      setIsLoadingApps(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadInstalledApps(false);
+  }, [loadInstalledApps]);
 
   // Clock tick
   useEffect(() => {
@@ -373,8 +415,34 @@ export default function GhostLauncherScreen() {
     setAppContextMenu(null);
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      // Whenever user returns to Home / Ghost Launcher, ensure Accessibility is OFF for payment safety
+      void blockerEngine.setAccessibilityServiceEnabled(false);
+      // Auto-refresh installed apps so newly installed apps appear immediately
+      void loadInstalledApps(true);
+    }, [loadInstalledApps])
+  );
+
   const handleLaunchApp = async (app: GhostApp, bypassDelay = false) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // 0ms PRE-FLIGHT BLOCK CHECK:
+    // Intercept immediately before launching so sealed apps never open freely!
+    if (app.packageName && Platform.OS === 'android') {
+      const isBlocked = blockerEngine.isPackageBlocked(app.packageName);
+      if (isBlocked) {
+        router.push({
+          pathname: '/blocked',
+          params: {
+            app: app.name,
+            package: app.packageName,
+            reason: blockerEngine.isCurfewActive() ? 'curfew' : 'opened',
+          },
+        });
+        return;
+      }
+    }
 
     // Minimalist Phone Parity: Mindful Delay Cognitive Pause
     const delay = delayConfigs[app.packageName || app.id];
@@ -392,6 +460,30 @@ export default function GhostLauncherScreen() {
       return;
     }
     if (app.packageName && Platform.OS === 'android') {
+      // Inverted Accessibility Architecture:
+      // Enable accessibility ONLY for designated short video apps right before launch!
+      // All other apps keep accessibility OFF so Google Pay and UPI are never blocked.
+      const shortVideoPackages = [
+        'com.instagram.android',
+        'com.google.android.youtube',
+        'com.snapchat.android',
+        'com.reddit.frontpage',
+        'com.twitter.android',
+        'com.facebook.katana',
+        'com.zhiliaoapp.musically',
+        'com.ss.android.ugc.trill',
+      ];
+      const isShortVideo =
+        shortVideoPackages.includes(app.packageName) ||
+        app.packageName.includes('instagram') ||
+        app.packageName.includes('youtube');
+
+      if (isShortVideo) {
+        blockerEngine.setAccessibilityServiceEnabled(true);
+      } else {
+        blockerEngine.setAccessibilityServiceEnabled(false);
+      }
+
       const success = launchApplication(app.packageName);
       if (!success) {
         showToast({
@@ -412,7 +504,7 @@ export default function GhostLauncherScreen() {
       return list;
     }
 
-    // In Minimal Home mode, display curated favorites (Minimalist Phone Home Desktop)
+    // In Minimal Home mode, display curated favorites (Minimalist Phone Home Desktop) when NOT searching
     if (profile === 'minimal' && !searchQuery.trim() && selectedCategory === 'All') {
       const favs = list.filter((a) => a.isFavorite);
       if (favs.length > 0) {
@@ -421,18 +513,23 @@ export default function GhostLauncherScreen() {
       return list.slice(0, 8);
     }
 
-    if (selectedCategory === 'Favorites') {
-      list = list.filter((a) => a.isFavorite);
-    } else if (selectedCategory !== 'All') {
-      list = list.filter((a) => a.category === selectedCategory);
+    // When NOT searching, filter by selected category
+    if (!searchQuery.trim()) {
+      if (selectedCategory === 'Favorites') {
+        list = list.filter((a) => a.isFavorite);
+      } else if (selectedCategory !== 'All') {
+        list = list.filter((a) => a.category === selectedCategory);
+      }
     }
 
+    // When searching, search across all non-hidden apps by name, alias, category, or package
     if (searchQuery.trim().length > 0) {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
       list = list.filter(
         (a) =>
           (a.customName || a.name).toLowerCase().includes(q) ||
-          a.category.toLowerCase().includes(q)
+          a.category.toLowerCase().includes(q) ||
+          (a.packageName && a.packageName.toLowerCase().includes(q))
       );
     }
 
@@ -782,16 +879,27 @@ export default function GhostLauncherScreen() {
                 Loading distraction-free drawer...
               </Text>
             </View>
-          ) : filteredApps.length === 0 ? (
+          ) : filteredApps.length === 0 && matchedContacts.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={[styles.emptyText, { color: themeStyles.subtext }]}>
                 {searchQuery.trim().length > 0
-                  ? `No apps found matching "${searchQuery}"`
+                  ? `No apps or contacts found matching "${searchQuery}"`
                   : 'No apps in this category'}
               </Text>
             </View>
           ) : null}
 
+          {/* Section header when searching and both apps & contacts exist */}
+          {searchQuery.trim().length > 0 && filteredApps.length > 0 && (matchedContacts.length > 0 || !hasContactsPermission) && (
+            <View style={styles.contactHeaderRow}>
+              <Ionicons name="apps-sharp" size={14} color={themeStyles.subtext} />
+              <Text style={[styles.contactHeaderText, { color: themeStyles.subtext }]}>
+                APPLICATIONS ({filteredApps.length})
+              </Text>
+            </View>
+          )}
+
+          {/* 1. APPLICATIONS FIRST */}
           {filteredApps.map((app) => {
             const activeDelay = delayConfigs[app.packageName || app.id] || 0;
             return (
@@ -845,6 +953,119 @@ export default function GhostLauncherScreen() {
               </View>
             );
           })}
+
+          {/* 2. CONTACTS BELOW APPS */}
+          {searchQuery.trim().length > 0 && matchedContacts.length > 0 && (
+            <View style={[styles.contactsContainer, { marginTop: filteredApps.length > 0 ? 16 : 4 }]}>
+              <View style={styles.contactHeaderRow}>
+                <Ionicons name="people-sharp" size={14} color="#00E699" />
+                <Text style={[styles.contactHeaderText, { color: themeStyles.accent }]}>
+                  CONTACTS ({matchedContacts.length})
+                </Text>
+              </View>
+
+              {matchedContacts.map((contact) => (
+                <View
+                  key={contact.id}
+                  style={[styles.contactCard, { backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border }]}
+                >
+                  <View style={styles.contactAvatarCircle}>
+                    <Text style={styles.contactAvatarInitials}>{contact.initials}</Text>
+                  </View>
+
+                  <View style={styles.contactInfo}>
+                    <Text style={[styles.contactNameText, { color: themeStyles.text }]} numberOfLines={1}>
+                      {contact.name}
+                    </Text>
+                    <Text style={[styles.contactPhoneText, { color: themeStyles.subtext }]}>
+                      {contact.phone}
+                    </Text>
+                  </View>
+
+                  {/* 1-Tap Quick Action Buttons: Call, WhatsApp, SMS */}
+                  <View style={styles.contactActionButtons}>
+                    <TouchableOpacity
+                      style={[styles.contactActionPill, { backgroundColor: 'rgba(0, 230, 153, 0.15)' }]}
+                      onPress={() => void callContact(contact.phone)}
+                      accessibilityLabel={`Call ${contact.name}`}
+                    >
+                      <Ionicons name="call" size={16} color="#00E699" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.contactActionPill, { backgroundColor: 'rgba(37, 211, 102, 0.15)' }]}
+                      onPress={() => void openWhatsAppChat(contact.phone)}
+                      accessibilityLabel={`WhatsApp ${contact.name}`}
+                    >
+                      <MaterialCommunityIcons name="whatsapp" size={18} color="#25D366" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.contactActionPill, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}
+                      onPress={() => void sendSmsToContact(contact.phone)}
+                      accessibilityLabel={`SMS ${contact.name}`}
+                    >
+                      <Ionicons name="chatbubble-ellipses" size={16} color="#38BDF8" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Friendly Contact Permission Request Card when ungranted (rendered below apps) */}
+          {searchQuery.trim().length > 0 && !hasContactsPermission && (
+            <View
+              style={[
+                styles.contactCard,
+                {
+                  backgroundColor: themeStyles.cardBg,
+                  borderColor: '#10B981',
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  padding: 14,
+                  gap: 10,
+                  marginTop: filteredApps.length > 0 ? 16 : 4,
+                  marginBottom: 12,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="people" size={18} color="#00E699" />
+                <Text style={{ color: themeStyles.text, fontSize: 14, fontWeight: '700' }}>
+                  Enable Contact Search
+                </Text>
+              </View>
+              <Text style={{ color: themeStyles.subtext, fontSize: 12, lineHeight: 17 }}>
+                Find contacts directly in the launcher to call or chat via WhatsApp. Contact data stays private on your phone.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#00E699',
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                  }}
+                  onPress={async () => {
+                    const granted = await requestContactsPermission();
+                    setHasContactsPermission(granted);
+                    if (granted) {
+                      const res = await searchContacts(searchQuery);
+                      setMatchedContacts(res);
+                    } else {
+                      await Linking.openSettings();
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#000000', fontSize: 12, fontWeight: '800' }}>
+                    Allow Contacts Access
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* Minimalist Phone Navigation between Favorites Home & Full Alphabetical Drawer */}
           {!isLoadingApps && profile === 'minimal' && !searchQuery.trim() && (
@@ -1573,6 +1794,68 @@ const styles = StyleSheet.create({
   appList: {
     paddingVertical: 8,
     gap: 4,
+  },
+  contactsContainer: {
+    marginBottom: 12,
+    gap: 8,
+  },
+  contactHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  contactHeaderText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  contactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 10,
+  },
+  contactAvatarCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 230, 153, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 153, 0.3)',
+  },
+  contactAvatarInitials: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#00E699',
+  },
+  contactInfo: {
+    flex: 1,
+  },
+  contactNameText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  contactPhoneText: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  contactActionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contactActionPill: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyBox: {
     paddingVertical: 32,

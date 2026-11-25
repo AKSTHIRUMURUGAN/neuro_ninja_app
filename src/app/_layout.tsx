@@ -2,14 +2,17 @@ import { DarkTheme, ThemeProvider, Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { hideFloatingHud } from 'expo-app-blocker';
+import { handleReminderActionResponse } from '../services/reminders/smart-reminder-engine';
+import { syncAllActiveReminders } from '../services/reminders/reminder-service';
 
 import { NinjaProvider } from '../context/ninja-context';
 import { NinjaAlertProvider } from '../context/ninja-alert-context';
 import { blockerEngine } from '../services/blocker/blocker-engine';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -24,7 +27,21 @@ function RootNavigator() {
   const router = useRouter();
 
   useEffect(() => {
-    SplashScreen.hideAsync();
+    // Hide Floating HUD overlay immediately inside NeuroNinja
+    hideFloatingHud();
+    void syncAllActiveReminders();
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        hideFloatingHud();
+      }
+    });
+
+    // Hide splash screen immediately with error catch
+    SplashScreen.hideAsync().catch(() => {});
+    const hideTimer = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 500);
 
     if (Platform.OS === 'ios' && blockerEngine.checkAndClearPendingUnlock()) {
       router.push('/blocked?reason=opened' as any);
@@ -35,6 +52,11 @@ function RootNavigator() {
     }) : null;
 
     const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const actionId = response.actionIdentifier;
+      if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
+        void handleReminderActionResponse(actionId);
+      }
+
       const data = response.notification.request.content.data as Record<string, string | undefined>;
       if (data?.type === 'alarm' && data.alarmId) {
         router.push(
@@ -50,6 +72,8 @@ function RootNavigator() {
     });
 
     return () => {
+      clearTimeout(hideTimer);
+      appStateSub.remove();
       sub?.remove();
       notifSub.remove();
     };

@@ -102,21 +102,31 @@ export default function HabitsScreen() {
   // Atomic Habits Habit-Stacking Cue
   const [stackingCue, setStackingCue] = useState<string>('');
 
-  // Deterministic 7-day strip anchored at local noon
+  // Deterministic 7-day strip anchored with Today in the CENTER:
+  // 3 previous days (-3, -2, -1), Today (0), 3 future days (+1, +2, +3)
   const dateStrip = useMemo(() => {
-    const list: { dateStr: string; label: string; dayNum: number; isToday: boolean }[] = [];
+    const list: {
+      dateStr: string;
+      label: string;
+      dayNum: number;
+      isToday: boolean;
+      isFuture: boolean;
+    }[] = [];
     const baseNoon = new Date();
     baseNoon.setHours(12, 0, 0, 0);
 
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(baseNoon.getTime() - i * 86400000);
+    for (let offset = -3; offset <= 3; offset++) {
+      const d = new Date(baseNoon.getTime() + offset * 86400000);
       const str = formatLocalDateString(d);
       const dayName = getWeekdayNameForDate(str);
+      const isToday = offset === 0;
+      const isFuture = offset > 0;
       list.push({
         dateStr: str,
-        label: i === 0 ? 'Today' : i === 1 ? 'Yest' : dayName,
+        label: isToday ? 'Today' : offset === -1 ? 'Yest' : dayName,
         dayNum: d.getDate(),
-        isToday: i === 0,
+        isToday,
+        isFuture,
       });
     }
     return list;
@@ -288,63 +298,65 @@ export default function HabitsScreen() {
           onPress={handleSmartBack}
           accessibilityLabel="Back to Ghost Launcher"
         >
-          <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
+          <Ionicons name="arrow-back" size={20} color="#F8FAFC" />
         </TouchableOpacity>
 
-        <View style={{ flex: 1, marginHorizontal: 10 }}>
+        <View style={styles.headerTitleBox}>
           <Text style={styles.badge}>ATOMIC & COMPETITOR PARITY</Text>
-          <Text style={styles.title}>Habit Dojo</Text>
+          <Text style={styles.title} numberOfLines={1}>Habit Dojo</Text>
         </View>
 
-        {/* View Switcher: Week Strip vs. Full Month Matrix */}
-        <View style={styles.viewModeSwitcher}>
+        <View style={styles.headerActions}>
+          {/* View Switcher: Week Strip vs. Full Month Matrix */}
+          <View style={styles.viewModeSwitcher}>
+            <TouchableOpacity
+              style={[styles.viewTab, viewMode === 'week' && styles.viewTabActive]}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setViewMode('week');
+              }}
+            >
+              <MaterialCommunityIcons
+                name="view-day-outline"
+                size={15}
+                color={viewMode === 'week' ? '#00E699' : '#94A3B8'}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.viewTab, viewMode === 'month' && styles.viewTabActive]}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setViewMode('month');
+              }}
+            >
+              <MaterialCommunityIcons
+                name="calendar-month-outline"
+                size={15}
+                color={viewMode === 'month' ? '#00E699' : '#94A3B8'}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Accountability Inbox Button */}
           <TouchableOpacity
-            style={[styles.viewTab, viewMode === 'week' && styles.viewTabActive]}
-            onPress={() => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setViewMode('week');
-            }}
+            style={styles.inboxBtn}
+            onPress={() => setInboxOpen(true)}
+            activeOpacity={0.7}
           >
-            <MaterialCommunityIcons
-              name="view-day-outline"
-              size={16}
-              color={viewMode === 'week' ? '#00E699' : '#94A3B8'}
-            />
+            <Ionicons name="shield-checkmark" size={17} color="#818CF8" />
+            {pendingVerifCount > 0 && (
+              <View style={styles.inboxBadge}>
+                <Text style={styles.inboxBadgeText}>{pendingVerifCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.viewTab, viewMode === 'month' && styles.viewTabActive]}
-            onPress={() => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setViewMode('month');
-            }}
-          >
-            <MaterialCommunityIcons
-              name="calendar-month-outline"
-              size={16}
-              color={viewMode === 'month' ? '#00E699' : '#94A3B8'}
-            />
+          {/* Add Habit Button */}
+          <TouchableOpacity style={styles.addBtn} onPress={() => setCreateOpen(true)}>
+            <Ionicons name="add" size={18} color="#070A11" />
           </TouchableOpacity>
         </View>
-
-        {/* Accountability Inbox Button */}
-        <TouchableOpacity
-          style={styles.inboxBtn}
-          onPress={() => setInboxOpen(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="shield-checkmark" size={20} color="#818CF8" />
-          {pendingVerifCount > 0 && (
-            <View style={styles.inboxBadge}>
-              <Text style={styles.inboxBadgeText}>{pendingVerifCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Add Habit Button */}
-        <TouchableOpacity style={styles.addBtn} onPress={() => setCreateOpen(true)}>
-          <Ionicons name="add" size={22} color="#070A11" />
-        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -393,65 +405,90 @@ export default function HabitsScreen() {
         {/* Week Date Selector Strip (Always visible in Week Mode) */}
         {viewMode === 'week' && (
           <View style={styles.dateStripContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.dateStripScroll}
-            >
+            <View style={styles.dateStripRow}>
               {dateStrip.map((item) => {
                 const isSelected = item.dateStr === selectedDate;
                 return (
                   <TouchableOpacity
                     key={item.dateStr}
-                    style={[styles.datePill, isSelected && styles.datePillActive]}
+                    disabled={item.isFuture}
+                    activeOpacity={item.isFuture ? 1 : 0.7}
+                    style={[
+                      styles.datePill,
+                      item.isToday && styles.datePillToday,
+                      isSelected && styles.datePillActive,
+                      item.isFuture && styles.datePillFuture,
+                    ]}
                     onPress={() => {
+                      if (item.isFuture) return;
                       setSelectedDate(item.dateStr);
                       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
                   >
-                    <Text style={[styles.datePillLabel, isSelected && styles.datePillLabelActive]}>
+                    <Text
+                      style={[
+                        styles.datePillLabel,
+                        item.isToday && styles.datePillLabelToday,
+                        isSelected && styles.datePillLabelActive,
+                        item.isFuture && styles.datePillLabelFuture,
+                      ]}
+                      numberOfLines={1}
+                    >
                       {item.label}
                     </Text>
-                    <Text style={[styles.datePillNum, isSelected && styles.datePillNumActive]}>
+                    <Text
+                      style={[
+                        styles.datePillNum,
+                        item.isToday && styles.datePillNumToday,
+                        isSelected && styles.datePillNumActive,
+                        item.isFuture && styles.datePillNumFuture,
+                      ]}
+                    >
                       {item.dayNum}
                     </Text>
                     {item.isToday && <View style={styles.todayIndicator} />}
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
+            </View>
           </View>
         )}
 
-        {/* Time-of-Day Filter Pills */}
-        <View style={styles.filterBar}>
-          {(
-            [
-              { id: 'ALL', label: 'All Routines' },
-              { id: 'morning', label: '🌅 Morning' },
-              { id: 'afternoon', label: '☀️ Afternoon' },
-              { id: 'evening', label: '🌙 Evening' },
-              { id: 'anytime', label: '⚡ Anytime' },
-            ] as const
-          ).map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.filterChip, timeFilter === item.id && styles.filterChipActive]}
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setTimeFilter(item.id);
-              }}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  timeFilter === item.id && styles.filterChipTextActive,
-                ]}
+        {/* Time-of-Day Filter Pills in Horizontal Scroll */}
+        <View style={styles.filterBarContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
+            {(
+              [
+                { id: 'ALL', label: 'All Routines' },
+                { id: 'morning', label: '🌅 Morning' },
+                { id: 'afternoon', label: '☀️ Afternoon' },
+                { id: 'evening', label: '🌙 Evening' },
+                { id: 'anytime', label: '⚡ Anytime' },
+              ] as const
+            ).map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.filterChip, timeFilter === item.id && styles.filterChipActive]}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setTimeFilter(item.id);
+                }}
               >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    timeFilter === item.id && styles.filterChipTextActive,
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
         <View style={styles.sectionHeaderRow}>
@@ -944,76 +981,83 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerTitleBox: {
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   badge: {
     fontSize: 9,
     fontWeight: '800',
     color: '#00E699',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#F8FAFC',
   },
   viewModeSwitcher: {
     flexDirection: 'row',
     backgroundColor: '#1E293B',
-    borderRadius: 10,
-    padding: 3,
-    marginRight: 8,
+    borderRadius: 8,
+    padding: 2,
   },
   viewTab: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   viewTabActive: {
     backgroundColor: '#0F1829',
   },
   inboxBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(129, 140, 248, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    marginRight: 8,
   },
   inboxBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
+    top: 2,
+    right: 2,
     backgroundColor: '#EF4444',
     borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    minWidth: 15,
+    height: 15,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
   inboxBadgeText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#00E699',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1079,13 +1123,16 @@ const styles = StyleSheet.create({
   dateStripContainer: {
     marginBottom: 14,
   },
-  dateStripScroll: {
-    gap: 8,
+  dateStripRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   datePill: {
-    width: 52,
-    paddingVertical: 10,
-    borderRadius: 14,
+    flex: 1,
+    paddingVertical: 9,
+    marginHorizontal: 2,
+    borderRadius: 12,
     backgroundColor: '#0F1829',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1097,6 +1144,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 230, 153, 0.12)',
     borderColor: '#00E699',
   },
+  datePillToday: {
+    borderColor: 'rgba(0, 230, 153, 0.6)',
+    backgroundColor: 'rgba(0, 230, 153, 0.08)',
+  },
+  datePillFuture: {
+    backgroundColor: 'rgba(15, 24, 41, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.02)',
+    opacity: 0.38,
+  },
   datePillLabel: {
     fontSize: 11,
     fontWeight: '600',
@@ -1104,6 +1160,13 @@ const styles = StyleSheet.create({
   },
   datePillLabelActive: {
     color: '#00E699',
+  },
+  datePillLabelToday: {
+    color: '#00E699',
+    fontWeight: '700',
+  },
+  datePillLabelFuture: {
+    color: '#475569',
   },
   datePillNum: {
     fontSize: 16,
@@ -1114,6 +1177,12 @@ const styles = StyleSheet.create({
   datePillNumActive: {
     color: '#00E699',
   },
+  datePillNumToday: {
+    color: '#00E699',
+  },
+  datePillNumFuture: {
+    color: '#475569',
+  },
   todayIndicator: {
     position: 'absolute',
     bottom: 4,
@@ -1121,6 +1190,14 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#00E699',
+  },
+  filterBarContainer: {
+    marginBottom: 14,
+  },
+  filterScroll: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
   },
   filterBar: {
     flexDirection: 'row',

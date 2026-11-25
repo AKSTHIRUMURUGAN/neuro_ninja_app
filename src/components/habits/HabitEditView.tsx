@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { HabitItemV3, VerifierType } from '../../services/habits/habit-types';
 import { DAY_NAMES } from '../../services/habits/streak-calculator';
+import { dareService, type EntityStakeInfo } from '../../services/wallet/dare-service';
 
 interface HabitEditViewProps {
   habit: HabitItemV3;
@@ -34,6 +35,32 @@ export default function HabitEditView({ habit, onSave, onDelete }: HabitEditView
   const [verifierType, setVerifierType] = useState<VerifierType>(habit.verifierType || 'self');
   const [verifierEmail, setVerifierEmail] = useState(habit.verifierEmail || '');
   const [saving, setSaving] = useState(false);
+  const [habitStake, setHabitStake] = useState<EntityStakeInfo | null>(null);
+  const [selectedHabitStake, setSelectedHabitStake] = useState<number>(0);
+
+  useEffect(() => {
+    dareService.getHabitStake(habit.id).then((stake) => {
+      if (stake && stake.status === 'active') {
+        setHabitStake(stake);
+        setSelectedHabitStake(stake.stakeRupees);
+      }
+    });
+  }, [habit.id]);
+
+  const handleSetHabitStake = async (amount: number) => {
+    setSelectedHabitStake(amount);
+    if (amount === 0) {
+      setHabitStake(null);
+      return;
+    }
+    const res = await dareService.stakeHabit(habit.id, title || habit.title, amount);
+    if (res.success && res.stake) {
+      setHabitStake(res.stake);
+      Alert.alert('Habit Dare Active! ⚡', `₹${amount}/day locked in escrow for "${title || habit.title}".`);
+    } else {
+      Alert.alert('Error', res.error || 'Failed to lock stake');
+    }
+  };
 
   const toggleDay = (dayIndex: number) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -256,6 +283,45 @@ export default function HabitEditView({ habit, onSave, onDelete }: HabitEditView
         )}
       </View>
 
+      {/* Real-Money Daily Habit Escrow Dare */}
+      <View style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="flash" size={18} color="#00E699" />
+            <Text style={styles.sectionTitle}>DAILY HABIT ESCROW DARE</Text>
+          </View>
+          {habitStake ? (
+            <Text style={{ color: '#00E699', fontWeight: '800', fontSize: 13 }}>₹{habitStake.stakeRupees}/DAY</Text>
+          ) : (
+            <Text style={{ color: '#94A3B8', fontSize: 11 }}>No Stake</Text>
+          )}
+        </View>
+        <Text style={{ color: '#94A3B8', fontSize: 12, marginBottom: 12, lineHeight: 16 }}>
+          Pledge real money each day on this habit. Complete your daily habit to protect your streak and your stake!
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {[0, 2, 5, 10, 25].map((amt) => (
+            <TouchableOpacity
+              key={amt}
+              style={[
+                styles.stakeChip,
+                selectedHabitStake === amt && styles.stakeChipSelected,
+              ]}
+              onPress={() => handleSetHabitStake(amt)}
+            >
+              <Text
+                style={[
+                  styles.stakeChipText,
+                  selectedHabitStake === amt && styles.stakeChipTextSelected,
+                ]}
+              >
+                {amt === 0 ? 'None' : `₹${amt}/d`}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {/* Action Buttons */}
       <TouchableOpacity
         style={[styles.saveBtn, saving && styles.btnDisabled]}
@@ -451,5 +517,28 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.6,
+  },
+  stakeChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stakeChipSelected: {
+    backgroundColor: 'rgba(0, 230, 153, 0.15)',
+    borderColor: '#00E699',
+  },
+  stakeChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stakeChipTextSelected: {
+    color: '#00E699',
+    fontWeight: '900',
   },
 });

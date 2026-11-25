@@ -342,7 +342,7 @@ export default function TasksScreen() {
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.filterStrip}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: 'center' }}
           >
             {[
               { id: 'inbox', label: 'All Active' },
@@ -850,17 +850,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  filterStrip: { maxHeight: 40, marginBottom: 6 },
+  filterStrip: { minHeight: 44, marginBottom: 8 },
   filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 16,
     backgroundColor: '#0F1829',
     borderWidth: 1,
     borderColor: '#1E293B',
+    minHeight: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filterChipActive: { backgroundColor: '#1E293B', borderColor: '#10B981' },
-  filterText: { color: '#94A3B8', fontSize: 12, fontWeight: '700' },
+  filterText: { color: '#94A3B8', fontSize: 12, fontWeight: '700', includeFontPadding: false },
   filterTextActive: { color: '#10B981' },
   listScroll: { padding: 16, gap: 10, paddingBottom: 40 },
   emptyBox: { alignItems: 'center', paddingVertical: 48, gap: 8 },

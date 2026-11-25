@@ -40,6 +40,9 @@ export function UsageTimeline({
   const [realUsage, setRealUsage] = useState<Record<string, number>>({});
   const [realSot, setRealSot] = useState<number>(0);
   const [installedMap, setInstalledMap] = useState<Record<string, string>>({});
+  const [realHourly, setRealHourly] = useState<number[]>([]);
+  const [realUnlocks, setRealUnlocks] = useState<number>(0);
+  const [realLaunches, setRealLaunches] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -61,6 +64,15 @@ export function UsageTimeline({
         if (usageStats && usageStats.totalScreenTimeMinutes > 0) {
           setRealSot(usageStats.totalScreenTimeMinutes);
         }
+        if (usageStats && usageStats.hourlyUsageMinutes && usageStats.hourlyUsageMinutes.length === 24) {
+          setRealHourly(usageStats.hourlyUsageMinutes);
+        }
+        if (usageStats && usageStats.phoneUnlocksCount !== undefined) {
+          setRealUnlocks(usageStats.phoneUnlocksCount);
+        }
+        if (usageStats && usageStats.appLaunchCounts) {
+          setRealLaunches(usageStats.appLaunchCounts);
+        }
       } catch (e) {
         console.warn('Error loading real device usage stats:', e);
       }
@@ -70,13 +82,13 @@ export function UsageTimeline({
     };
   }, []);
 
-  // 100% Genuine Metrics: Use real device SOT and actual intercepts
+  // 100% Genuine Metrics: Use real device SOT, real unlocks and actual intercepts
   const totalSotMinutes = realSot > 0 ? realSot : (todayStat?.totalScreenTimeMinutes ?? 0);
-  const unlocksCount = todayStat?.phoneUnlocksCount ?? 0;
+  const unlocksCount = realUnlocks > 0 ? realUnlocks : (todayStat?.phoneUnlocksCount ?? 0);
   const interceptsCount = todayStat?.intercepts ?? totalIntercepts ?? 0;
 
-  // 24-hour chronological distribution
-  const rawHourly = todayStat?.hourlyUsageMinutes;
+  // 24-hour chronological distribution (Digital Wellbeing Parity)
+  const rawHourly = realHourly.length === 24 ? realHourly : todayStat?.hourlyUsageMinutes;
   const hours = Array.from({ length: 24 }, (_, i) => {
     let minutes = 0;
     if (rawHourly && rawHourly[i] !== undefined) {
@@ -133,7 +145,7 @@ export function UsageTimeline({
     const limitMins = policy?.dailyLimitMinutes ?? meta.defaultLimit;
     const sessionLimit = policy?.sessionLimitMinutes ?? 10;
     const launchLimit = policy?.dailyLaunchLimit ?? 15;
-    const launches = todayStat?.appLaunchCounts?.[pkg] ?? (usedMins > 0 ? Math.max(1, Math.round(usedMins / 6)) : 0);
+    const launches = realLaunches[pkg] ?? todayStat?.appLaunchCounts?.[pkg] ?? (usedMins > 0 ? Math.max(1, Math.round(usedMins / 6)) : 0);
     const quotaStatus = isDailyQuotaExceeded(usedMins, policy);
     const curfewStatus = isCurfewActive(policy);
 

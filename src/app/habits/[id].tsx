@@ -15,7 +15,7 @@ import * as Haptics from 'expo-haptics';
 
 import {
   getHabitById,
-  getHabitCompletionsMap,
+  getAllHabitCompletionsMap,
   cycleHabitStatus,
   deleteHabit,
   updateHabit,
@@ -56,7 +56,7 @@ export default function HabitDetailScreen() {
     try {
       const [h, compMap] = await Promise.all([
         getHabitById(id),
-        getHabitCompletionsMap(id, new Date().getFullYear(), new Date().getMonth() + 1),
+        getAllHabitCompletionsMap(id),
       ]);
       setHabit(h);
       setCompletions(compMap);

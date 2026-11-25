@@ -121,11 +121,11 @@ export default function GuardianScreen() {
 
           <TouchableOpacity
             style={[styles.addMemberBtn, { flex: 1, backgroundColor: '#00E699' }]}
-            onPress={() => router.push('/lifeos/verification' as any)}
+            onPress={() => router.push('/guardian' as any)}
             activeOpacity={0.8}
           >
-            <Ionicons name="checkmark-done-circle" size={16} color="#070A11" style={{ marginRight: 6 }} />
-            <Text style={styles.addMemberText}>Verify Proofs</Text>
+            <Ionicons name="shield-checkmark" size={16} color="#070A11" style={{ marginRight: 6 }} />
+            <Text style={styles.addMemberText}>DNS Firewall</Text>
           </TouchableOpacity>
         </View>
 

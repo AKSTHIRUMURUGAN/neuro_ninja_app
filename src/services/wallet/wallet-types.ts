@@ -46,3 +46,18 @@ export interface DailyBonusStatus {
   hasShieldBonus: boolean;
   hoursUntilNextClaim: number;
 }
+
+export interface RealMoneyDare {
+  id: string;
+  title: string;
+  dareType: 'DOOMSCROLL_LIMIT' | 'FOCUS_SESSION' | 'DAILY_DETOX';
+  stakeRupees: number;
+  targetLimit: number;
+  currentCount: number;
+  status: 'ACTIVE' | 'COMPLETED_SUCCESS' | 'BREACHED_FORFEIT' | 'CANCELLED';
+  escrowId: string;
+  deadline: string;
+  startedAt: string;
+  settledAt?: string;
+  breachReason?: string;
+}

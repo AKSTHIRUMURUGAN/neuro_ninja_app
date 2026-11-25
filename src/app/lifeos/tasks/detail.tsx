@@ -34,6 +34,7 @@ import type { RecurrenceRule } from '../../../services/tasks/recurrence-engine';
 import { useNinja } from '../../../context/ninja-context';
 import VerifierSelectModal from '../../../components/verification/VerifierSelectModal';
 import type { VerifierType } from '../../../services/habits/habit-types';
+import { dareService, type EntityStakeInfo } from '../../../services/wallet/dare-service';
 
 export default function TaskDetailScreen() {
   const router = useRouter();
@@ -59,6 +60,8 @@ export default function TaskDetailScreen() {
   const [verifierId, setVerifierId] = useState<string | null>(null);
   const [verifierEmail, setVerifierEmail] = useState<string | null>(null);
   const [verifierModalOpen, setVerifierModalOpen] = useState(false);
+  const [taskStake, setTaskStake] = useState<EntityStakeInfo | null>(null);
+  const [selectedTaskStake, setSelectedTaskStake] = useState<number>(0);
 
   const loadAll = useCallback(() => {
     if (!id) return;
@@ -87,8 +90,30 @@ export default function TaskDetailScreen() {
         setVerifierId(loaded.verifierId || null);
         setVerifierEmail(loaded.verifierEmail || null);
       }
+      dareService.getTaskStake(id).then((stake) => {
+        if (stake && stake.status === 'active') {
+          setTaskStake(stake);
+          setSelectedTaskStake(stake.stakeRupees);
+        }
+      });
     })();
   }, [id]);
+
+  const handleSetTaskStake = async (amount: number) => {
+    setSelectedTaskStake(amount);
+    if (!id) return;
+    if (amount === 0) {
+      setTaskStake(null);
+      return;
+    }
+    const res = await dareService.stakeTask(id, title || task?.title || 'Task Dare', amount);
+    if (res.success && res.stake) {
+      setTaskStake(res.stake);
+      Alert.alert('Task Stake Active! ⚡', `₹${amount} locked in escrow for "${title || task?.title}". Complete on time!`);
+    } else {
+      Alert.alert('Error', res.error || 'Failed to lock stake');
+    }
+  };
 
   useEffect(() => {
     loadAll();
@@ -419,6 +444,45 @@ export default function TaskDetailScreen() {
           </View>
         </View>
 
+        {/* Real-Money Task Escrow Dare */}
+        <View style={styles.card}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="flash" size={18} color="#00E699" />
+              <Text style={styles.cardLabel}>TASK ESCROW DARE</Text>
+            </View>
+            {taskStake ? (
+              <Text style={{ color: '#00E699', fontWeight: '800', fontSize: 13 }}>₹{taskStake.stakeRupees} LOCKED</Text>
+            ) : (
+              <Text style={{ color: '#94A3B8', fontSize: 11 }}>No Stake</Text>
+            )}
+          </View>
+          <Text style={{ color: '#94A3B8', fontSize: 12, marginBottom: 12, lineHeight: 16 }}>
+            Put real money on the line! Finish this task on time to reclaim your stake + bonus XP.
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[0, 5, 10, 25, 50].map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={[
+                  styles.stakeChip,
+                  (taskStake ? taskStake.stakeRupees === amt : selectedTaskStake === amt) && styles.stakeChipSelected,
+                ]}
+                onPress={() => handleSetTaskStake(amt)}
+              >
+                <Text
+                  style={[
+                    styles.stakeChipText,
+                    (taskStake ? taskStake.stakeRupees === amt : selectedTaskStake === amt) && styles.stakeChipTextSelected,
+                  ]}
+                >
+                  {amt === 0 ? 'None' : `₹${amt}`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* Actions */}
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity
@@ -524,5 +588,29 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   actionBtnText: { fontWeight: '900', fontSize: 14 },
+  cardLabel: { color: '#00E699', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
+  stakeChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stakeChipSelected: {
+    backgroundColor: 'rgba(0, 230, 153, 0.15)',
+    borderColor: '#00E699',
+  },
+  stakeChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stakeChipTextSelected: {
+    color: '#00E699',
+    fontWeight: '900',
+  },
 });
 

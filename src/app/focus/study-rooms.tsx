@@ -109,17 +109,13 @@ export default function StudyRoomsScreen() {
   const handleJoinRoom = async (room: StudyRoom) => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setJoinedRoomId(room.id);
-    showAlert({
-      title: `Joined ${room.title}!`,
-      message: `You are now synced with ${room.activeParticipants} fellow Ninjas. Launching synchronized focus sprint (${room.currentCycle}).`,
-      type: 'success',
-      icon: 'account-group',
-      buttons: [
-        {
-          text: 'Enter Focus Chamber',
-          onPress: () => router.push('/focus/pomodoro' as any),
-        },
-      ],
+    router.push({
+      pathname: '/focus/study-chamber' as any,
+      params: {
+        roomId: room.id,
+        title: room.title,
+        hostName: room.hostName,
+      },
     });
   };
 
@@ -203,28 +199,34 @@ export default function StudyRoomsScreen() {
           </View>
         </View>
 
-        {/* Category Filters */}
-        <View style={styles.filterRow}>
-          {[
-            { id: 'all' as const, label: 'All Lounges' },
-            { id: 'exam' as const, label: 'Exams (JEE/NEET/UPSC)' },
-            { id: 'craft' as const, label: 'Craft & Code' },
-          ].map((f) => (
-            <TouchableOpacity
-              key={f.id}
-              style={[styles.filterChip, selectedFilter === f.id && styles.filterChipActive]}
-              onPress={() => setSelectedFilter(f.id)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  selectedFilter === f.id && styles.filterChipTextActive,
-                ]}
+        {/* Category Filters - Horizontal Scroll to prevent chip squeezing */}
+        <View style={styles.filterContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
+            {[
+              { id: 'all' as const, label: 'All Lounges' },
+              { id: 'exam' as const, label: 'Exams (JEE/NEET/UPSC)' },
+              { id: 'craft' as const, label: 'Craft & Code' },
+            ].map((f) => (
+              <TouchableOpacity
+                key={f.id}
+                style={[styles.filterChip, selectedFilter === f.id && styles.filterChipActive]}
+                onPress={() => setSelectedFilter(f.id)}
               >
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedFilter === f.id && styles.filterChipTextActive,
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Room Cards List */}
@@ -430,10 +432,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 2,
   },
-  filterRow: {
+  filterContainer: {
+    marginBottom: 16,
+  },
+  filterScroll: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 16,
+    paddingRight: 16,
   },
   filterChip: {
     paddingVertical: 8,

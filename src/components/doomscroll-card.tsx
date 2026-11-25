@@ -1,16 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NinjaPalette } from '../constants/theme';
 import { doomscrollEngine, type DoomscrollDayReport } from '../services/doomscroll/doomscroll-engine';
+import { blockerEngine } from '../services/blocker/blocker-engine';
 
 export function DoomscrollCard() {
   const [report, setReport] = useState<DoomscrollDayReport | null>(null);
+  const [breakdown, setBreakdown] = useState<{ instagramReels: number; youtubeShorts: number; total: number }>({
+    instagramReels: 0,
+    youtubeShorts: 0,
+    total: 0,
+  });
+  const [brainScore, setBrainScore] = useState<number>(100);
 
   useEffect(() => {
     void (async () => {
       const dayReport = await doomscrollEngine.getDayReport();
       setReport(dayReport);
+      if (Platform.OS === 'android') {
+        const bd = blockerEngine.getShortFormBreakdown();
+        setBreakdown(bd);
+        setBrainScore(blockerEngine.getBrainStateScore());
+      }
     })();
   }, []);
 
@@ -50,6 +62,29 @@ export function DoomscrollCard() {
       <Text style={styles.subtext}>
         Measures excessive feeds, rapid reopening loops, and late-night scrolling.
       </Text>
+
+      {/* Live Reels & Shorts Segregated Breakdown Strip (BrainPal & Doomy Parity) */}
+      <View style={styles.reelsStrip}>
+        <View style={styles.reelsCol}>
+          <Text style={styles.reelsNum}>🔥 {breakdown.total}</Text>
+          <Text style={styles.reelsLabel}>Total Short-Videos</Text>
+          <View style={styles.platformBadgeRow}>
+            <Text style={styles.platformBadgeText}>📸 {breakdown.instagramReels} Reels</Text>
+            <Text style={styles.platformBadgeDivider}>•</Text>
+            <Text style={styles.platformBadgeText}>▶️ {breakdown.youtubeShorts} Shorts</Text>
+          </View>
+        </View>
+        <View style={styles.stripDivider} />
+        <View style={styles.reelsCol}>
+          <Text style={[styles.reelsNum, { color: brainScore < 60 ? '#EF4444' : '#38BDF8' }]}>
+            🧠 {brainScore}%
+          </Text>
+          <Text style={styles.reelsLabel}>Brain State Reserve</Text>
+          <Text style={styles.platformBadgeSubText}>
+            {brainScore >= 80 ? 'Zen Mind' : brainScore >= 50 ? 'Dopamine Strain' : 'Brainrot Hazard'}
+          </Text>
+        </View>
+      </View>
 
       {/* 4-Stat Metric Grid */}
       <View style={styles.grid}>
@@ -315,5 +350,59 @@ const styles = StyleSheet.create({
     color: NinjaPalette.textSecondary,
     flex: 1,
     lineHeight: 15,
+  },
+  reelsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#070A11',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'space-around',
+  },
+  reelsCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  reelsNum: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#F59E0B',
+    marginBottom: 2,
+  },
+  reelsLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  stripDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  platformBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  platformBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#CBD5E1',
+  },
+  platformBadgeDivider: {
+    fontSize: 9,
+    color: '#64748B',
+  },
+  platformBadgeSubText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#38BDF8',
+    marginTop: 3,
   },
 });

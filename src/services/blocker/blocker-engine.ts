@@ -373,11 +373,83 @@ class BlockerEngine {
   }
 
   public openAccessibilitySettings(): void {
-    ExpoAppBlocker.openAccessibilitySettings();
+    if (Platform.OS === 'android') {
+      ExpoAppBlocker.openAccessibilitySettings();
+    }
   }
 
   public isAccessibilityServiceRunning(): boolean {
+    if (Platform.OS !== 'android') return false;
     return ExpoAppBlocker.isAccessibilityServiceRunning();
+  }
+
+  public async checkAccessibilityPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return false;
+    return await ExpoAppBlocker.checkAccessibilityPermission();
+  }
+
+  public async checkBatteryOptimizationPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    return await ExpoAppBlocker.checkBatteryOptimizationPermission();
+  }
+
+  public requestIgnoreBatteryOptimization(): boolean {
+    if (Platform.OS !== 'android') return true;
+    return ExpoAppBlocker.requestIgnoreBatteryOptimization();
+  }
+
+  public getDeviceManufacturer(): string {
+    if (Platform.OS !== 'android') return 'apple';
+    return ExpoAppBlocker.getDeviceManufacturer();
+  }
+
+  public openAutostartSettings(): boolean {
+    if (Platform.OS !== 'android') return false;
+    return ExpoAppBlocker.openAutostartSettings();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Reels & Short-Video Guardian (Competitor Parity)
+  // ─────────────────────────────────────────────────────────────
+
+  public isSurgicalReelsBlockEnabled(): boolean {
+    return ExpoAppBlocker.isSurgicalReelsBlockEnabled();
+  }
+
+  public setSurgicalReelsBlockEnabled(enabled: boolean): void {
+    ExpoAppBlocker.setSurgicalReelsBlockEnabled(enabled);
+  }
+
+  public getReelDailyBudget(): number {
+    return ExpoAppBlocker.getReelDailyBudget();
+  }
+
+  public setReelDailyBudget(budget: number): void {
+    ExpoAppBlocker.setReelDailyBudget(budget);
+  }
+
+  public getTodayReelsCount(): number {
+    return ExpoAppBlocker.getTodayReelsCount();
+  }
+
+  public getTodayInstagramCount(): number {
+    return ExpoAppBlocker.getTodayInstagramCount();
+  }
+
+  public getTodayYoutubeCount(): number {
+    return ExpoAppBlocker.getTodayYoutubeCount();
+  }
+
+  public getShortFormBreakdown(): ExpoAppBlocker.ShortFormBreakdown {
+    return ExpoAppBlocker.getShortFormBreakdown();
+  }
+
+  public resetTodayReelsCount(): void {
+    ExpoAppBlocker.resetTodayReelsCount();
+  }
+
+  public getBrainStateScore(): number {
+    return ExpoAppBlocker.getBrainStateScore();
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -420,12 +492,80 @@ class BlockerEngine {
     ExpoAppBlocker.setVipPackages(packages);
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Safe Internet Guardian (Network & DNS Protection Engine)
+  // ─────────────────────────────────────────────────────────────
+
+  public prepareGuardianVpn(): boolean {
+    return ExpoAppBlocker.prepareGuardianVpn();
+  }
+
+  public startGuardianVpn(): boolean {
+    return ExpoAppBlocker.startGuardianVpn();
+  }
+
+  public stopGuardianVpn(): boolean {
+    return ExpoAppBlocker.stopGuardianVpn();
+  }
+
+  public isGuardianVpnActive(): boolean {
+    return ExpoAppBlocker.isGuardianVpnActive();
+  }
+
+  public getGuardianStats(): ExpoAppBlocker.GuardianStats {
+    return ExpoAppBlocker.getGuardianStats();
+  }
+
+  public setGuardianCategoryConfigs(
+    adult: boolean,
+    malware: boolean,
+    ads: boolean,
+    violence: boolean
+  ): void {
+    ExpoAppBlocker.setGuardianCategoryConfigs(adult, malware, ads, violence);
+  }
+
+  public setGuardianCustomLists(
+    allowlist: string[],
+    blocklist: string[]
+  ): void {
+    ExpoAppBlocker.setGuardianCustomLists(allowlist, blocklist);
+  }
+
+  public resetGuardianStats(): void {
+    ExpoAppBlocker.resetGuardianStats();
+  }
+
   public isSuppressAllNonVip(): boolean {
     return ExpoAppBlocker.isSuppressAllNonVip();
   }
 
   public setSuppressAllNonVip(enabled: boolean): void {
     ExpoAppBlocker.setSuppressAllNonVip(enabled);
+  }
+
+  public hasWriteSecureSettings(): boolean {
+    return ExpoAppBlocker.hasWriteSecureSettings();
+  }
+
+  public isPaymentAppProtectionActive(): boolean {
+    return ExpoAppBlocker.isPaymentAppProtectionActive();
+  }
+
+  public setAccessibilityServiceEnabled(enabled: boolean): boolean {
+    return ExpoAppBlocker.setAccessibilityServiceEnabled(enabled);
+  }
+
+  public isAccessibilityServiceEnabled(): boolean {
+    return ExpoAppBlocker.isAccessibilityServiceEnabled();
+  }
+
+  public isPackageBlocked(packageName: string): boolean {
+    return ExpoAppBlocker.isPackageBlocked(packageName);
+  }
+
+  public isCurfewActive(): boolean {
+    return ExpoAppBlocker.isCurfewActive();
   }
 }
 
