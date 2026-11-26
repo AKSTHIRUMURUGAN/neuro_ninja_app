@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, type StyleProp, type ViewStyle } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Image, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { blockerEngine } from '../../services/blocker/blocker-engine';
 
@@ -71,9 +71,32 @@ export function AppIcon({
   showBorder = true,
 }: AppIconProps) {
   const [imageError, setImageError] = useState(false);
+  const [lazyBase64, setLazyBase64] = useState<string | null>(null);
 
-  // 1. Resolve base64: either passed directly or retrieved from engine cache
-  const effectiveBase64 = iconBase64 || (packageName ? blockerEngine.getCachedIcon(packageName) : null);
+  const cachedIcon = packageName ? blockerEngine.getCachedIcon(packageName) : null;
+
+  useEffect(() => {
+    let mounted = true;
+    if (
+      Platform.OS === 'android' &&
+      packageName &&
+      !packageName.startsWith('builtin.') &&
+      !iconBase64 &&
+      !cachedIcon
+    ) {
+      void blockerEngine.getAppIcon(packageName).then((icon) => {
+        if (mounted && icon) {
+          setLazyBase64(icon);
+        }
+      });
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [packageName, iconBase64, cachedIcon]);
+
+  // 1. Resolve base64: passed directly, lazy-loaded, or retrieved from engine cache
+  const effectiveBase64 = iconBase64 || lazyBase64 || cachedIcon;
 
   // 2. Resolve domain for CDN favicon
   const brandMeta = packageName ? PACKAGE_DOMAIN_MAP[packageName] : undefined;

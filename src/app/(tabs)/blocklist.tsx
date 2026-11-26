@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   Platform,
   TextInput,
   Switch,
@@ -57,6 +58,13 @@ export default function BlocklistScreen() {
         if (active) {
           setInstalledApps(apps);
           setLoadingApps(false);
+          if (apps.length > 0) {
+            const installedSet = new Set(apps.map((a) => a.packageName));
+            const pruned = settings.androidBlockedPackages.filter((pkg) => installedSet.has(pkg));
+            if (pruned.length !== settings.androidBlockedPackages.length) {
+              void setAndroidSelection(pruned);
+            }
+          }
         }
       });
     }
@@ -87,7 +95,13 @@ export default function BlocklistScreen() {
       await setAndroidSelection([]);
       return;
     }
-    const socialPkgs = [
+    const filterToInstalled = (pkgs: string[]) => {
+      if (installedApps.length === 0) return pkgs;
+      const installedSet = new Set(installedApps.map((a) => a.packageName));
+      return pkgs.filter((pkg) => installedSet.has(pkg));
+    };
+
+    const socialPkgs = filterToInstalled([
       'com.instagram.android',
       'com.zhiliaoapp.musically',
       'com.google.android.youtube',
@@ -95,11 +109,13 @@ export default function BlocklistScreen() {
       'com.reddit.frontpage',
       'com.facebook.katana',
       'com.snapchat.android',
-    ];
+    ]);
     if (profile === 'work') {
       await setAndroidSelection(socialPkgs);
     } else if (profile === 'study') {
-      const studyPkgs = [...socialPkgs, 'com.netflix.mediaclient', 'com.spotify.music'];
+      const studyPkgs = Array.from(
+        new Set([...socialPkgs, ...filterToInstalled(['com.netflix.mediaclient', 'com.spotify.music'])])
+      );
       await setAndroidSelection(studyPkgs);
     } else if (profile === 'detox') {
       // Seal all common distractions + any installed non-system apps
@@ -109,10 +125,24 @@ export default function BlocklistScreen() {
   };
 
   const handleSelectCommonPresets = async () => {
-    const set = new Set(settings.androidBlockedPackages);
-    COMMON_DISTRACTIONS.forEach((d) => set.add(d.pkg));
+    const installedSet = new Set(installedApps.map((a) => a.packageName));
+    const set = new Set(
+      installedApps.length > 0
+        ? settings.androidBlockedPackages.filter((p) => installedSet.has(p))
+        : settings.androidBlockedPackages
+    );
+    COMMON_DISTRACTIONS.forEach((d) => {
+      if (installedApps.length === 0 || installedSet.has(d.pkg)) {
+        set.add(d.pkg);
+      }
+    });
     await setAndroidSelection(Array.from(set));
   };
+
+  const installedSealedCount =
+    installedApps.length > 0
+      ? installedApps.filter((a) => settings.androidBlockedPackages.includes(a.packageName)).length
+      : settings.androidBlockedPackages.length;
 
   const filteredApps = installedApps.filter((app) => {
     const matchesSearch =
@@ -134,7 +164,7 @@ export default function BlocklistScreen() {
           <Text style={styles.countBadgeText}>
             {Platform.OS === 'ios'
               ? settings.iosBlockedItems.length
-              : settings.androidBlockedPackages.length}{' '}
+              : installedSealedCount}{' '}
             Sealed
           </Text>
         </View>
@@ -258,81 +288,85 @@ export default function BlocklistScreen() {
               <Text style={styles.loadingText}>Loading installed apps...</Text>
             </View>
           ) : (
-            <ScrollView style={styles.appList}>
-              {filteredApps.length === 0 ? (
+            <FlatList
+              style={styles.appList}
+              data={filteredApps}
+              keyExtractor={(item) => item.packageName}
+              initialNumToRender={14}
+              maxToRenderPerBatch={12}
+              windowSize={7}
+              ListEmptyComponent={
                 <View style={styles.emptyBox}>
                   <Text style={styles.emptyText}>No apps found matching criteria.</Text>
                 </View>
-              ) : (
-                filteredApps.map((app) => {
-                  const isBlocked = settings.androidBlockedPackages.includes(app.packageName);
-                  const policy = settings.appQuotaPolicies[app.packageName];
-                  const isDoom =
-                    policy?.protectionMode === 'doom_barrier' ||
-                    (!policy?.protectionMode &&
-                      (app.name.toLowerCase().includes('instagram') ||
-                        app.name.toLowerCase().includes('youtube') ||
-                        app.name.toLowerCase().includes('tiktok') ||
-                        app.name.toLowerCase().includes('reddit') ||
-                        app.name.toLowerCase().includes('snapchat')));
-                  const hasCustom = policy?.hasCustomSecurity;
+              }
+              renderItem={({ item: app }) => {
+                const isBlocked = settings.androidBlockedPackages.includes(app.packageName);
+                const policy = settings.appQuotaPolicies[app.packageName];
+                const isDoom =
+                  policy?.protectionMode === 'doom_barrier' ||
+                  (!policy?.protectionMode &&
+                    (app.name.toLowerCase().includes('instagram') ||
+                      app.name.toLowerCase().includes('youtube') ||
+                      app.name.toLowerCase().includes('tiktok') ||
+                      app.name.toLowerCase().includes('reddit') ||
+                      app.name.toLowerCase().includes('snapchat')));
+                const hasCustom = policy?.hasCustomSecurity;
 
-                  return (
-                    <TouchableOpacity
-                      key={app.packageName}
-                      style={[styles.appRow, isBlocked && styles.appRowBlocked]}
-                      activeOpacity={0.7}
-                      onPress={() => setSelectedAppForConfig(app)}
-                    >
-                      <AppIcon
-                        packageName={app.packageName}
-                        appName={app.name}
-                        iconBase64={app.iconBase64}
-                        size={42}
+                return (
+                  <TouchableOpacity
+                    style={[styles.appRow, isBlocked && styles.appRowBlocked]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedAppForConfig(app)}
+                  >
+                    <AppIcon
+                      packageName={app.packageName}
+                      appName={app.name}
+                      iconBase64={app.iconBase64}
+                      size={42}
+                    />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Text style={styles.appLabel}>{app.name}</Text>
+                        {isDoom ? (
+                          <View style={styles.doomBadge}>
+                            <MaterialCommunityIcons name="fire" size={10} color="#EF4444" />
+                            <Text style={styles.doomBadgeText}>DOOM</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.vaultBadge}>
+                            <MaterialCommunityIcons name="shield-lock" size={10} color="#00E699" />
+                            <Text style={styles.vaultBadgeText}>VAULT</Text>
+                          </View>
+                        )}
+                        {hasCustom && (
+                          <View style={styles.customBadge}>
+                            <Text style={styles.customBadgeText}>CUSTOM LOCK</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.appPackage} numberOfLines={1}>
+                        {app.packageName}
+                      </Text>
+                    </View>
+                    <View style={styles.rowActions}>
+                      <TouchableOpacity
+                        style={styles.gearBtn}
+                        onPress={() => setSelectedAppForConfig(app)}
+                      >
+                        <MaterialCommunityIcons name="shield-edit-outline" size={18} color="#94A3B8" />
+                      </TouchableOpacity>
+                      <Switch
+                        value={isBlocked}
+                        onValueChange={() => toggleAndroidPackage(app.packageName)}
+                        thumbColor={isBlocked ? NinjaPalette.emerald : '#94A3B8'}
+                        trackColor={{ false: '#1E293B', true: 'rgba(0, 230, 153, 0.4)' }}
                       />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <Text style={styles.appLabel}>{app.name}</Text>
-                          {isDoom ? (
-                            <View style={styles.doomBadge}>
-                              <MaterialCommunityIcons name="fire" size={10} color="#EF4444" />
-                              <Text style={styles.doomBadgeText}>DOOM</Text>
-                            </View>
-                          ) : (
-                            <View style={styles.vaultBadge}>
-                              <MaterialCommunityIcons name="shield-lock" size={10} color="#00E699" />
-                              <Text style={styles.vaultBadgeText}>VAULT</Text>
-                            </View>
-                          )}
-                          {hasCustom && (
-                            <View style={styles.customBadge}>
-                              <Text style={styles.customBadgeText}>CUSTOM LOCK</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={styles.appPackage} numberOfLines={1}>
-                          {app.packageName}
-                        </Text>
-                      </View>
-                      <View style={styles.rowActions}>
-                        <TouchableOpacity
-                          style={styles.gearBtn}
-                          onPress={() => setSelectedAppForConfig(app)}
-                        >
-                          <MaterialCommunityIcons name="shield-edit-outline" size={18} color="#94A3B8" />
-                        </TouchableOpacity>
-                        <Switch
-                          value={isBlocked}
-                          onValueChange={() => toggleAndroidPackage(app.packageName)}
-                          thumbColor={isBlocked ? NinjaPalette.emerald : '#94A3B8'}
-                          trackColor={{ false: '#1E293B', true: 'rgba(0, 230, 153, 0.4)' }}
-                        />
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
           )}
 
           <AppConfigModal
