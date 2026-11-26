@@ -768,12 +768,29 @@ object ShortVideoDetector {
     val foundTextList = mutableListOf<String>()
     var followFound = false
 
+    // For YouTube Shorts, start deepScan inside reel_watch_fragment_root so parent browse_fragment_* doesn't abort it
+    var scanRoot: AccessibilityNodeInfo = rootNode
+    var shouldRecycleScanRoot = false
+    if (packageName.contains("youtube")) {
+      val shortsRoots = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/reel_watch_fragment_root")
+      if (!shortsRoots.isNullOrEmpty()) {
+        val (centerShorts, _) = selectCenterViewportNode(shortsRoots)
+        if (centerShorts != null) {
+          scanRoot = centerShorts
+        }
+        // Recycle only the unused ones if we picked centerShorts; recycle all at the end
+        for (n in shortsRoots) {
+          if (n != scanRoot) recycleNode(n) else shouldRecycleScanRoot = true
+        }
+      }
+    }
+
     fun deepScan(node: AccessibilityNodeInfo?, depth: Int) {
       if (node == null || depth > MAX_DEEP_DEPTH) return
 
       val resId = node.viewIdResourceName ?: ""
       if (resId.contains("row_feed") || resId.contains("feed_tab") || resId.contains("reels_tray") ||
-        resId.contains("browse_fragment") || resId.contains("results_recycler") ||
+        resId.contains("results_recycler") ||
         resId.contains("comment") || resId.contains("share")
       ) {
         return
@@ -792,8 +809,26 @@ object ShortVideoDetector {
           author = desc.substringAfter("Profile picture of ").trim()
         } else if (desc.endsWith("'s profile picture", ignoreCase = true)) {
           author = desc.substringBefore("'s profile picture").trim()
+        } else if (desc.startsWith("Go to channel ", ignoreCase = true)) {
+          author = desc.substringAfter("Go to channel ").trim().trimEnd('.')
         } else if (desc.startsWith("Subscribe to ", ignoreCase = true)) {
-          author = desc.substringAfter("Subscribe to ").trim()
+          author = desc.substringAfter("Subscribe to ").trim().trimEnd('.')
+        }
+      }
+
+      if (caption.isBlank() && text.isBlank() && desc.length > 6 && !isChromeStopword(desc)) {
+        val dl = desc.lowercase()
+        val isActionDesc = dl.startsWith("like this video") ||
+          dl.startsWith("dislike this video") ||
+          dl.startsWith("view ") ||
+          dl.startsWith("share ") ||
+          dl.startsWith("see more videos") ||
+          dl.startsWith("go to channel") ||
+          dl.startsWith("subscribe to") ||
+          dl.contains(" minutes ") ||
+          dl.contains(" seconds ")
+        if (!isActionDesc) {
+          caption = desc
         }
       }
 
@@ -817,7 +852,10 @@ object ShortVideoDetector {
       }
     }
 
-    deepScan(rootNode, 0)
+    deepScan(scanRoot, 0)
+    if (shouldRecycleScanRoot) {
+      recycleNode(scanRoot)
+    }
 
     if (author.isBlank() && foundTextList.isNotEmpty()) {
       for (t in foundTextList) {
