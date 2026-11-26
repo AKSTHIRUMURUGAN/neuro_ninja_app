@@ -1,10 +1,49 @@
-import { Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import {
   isDefaultLauncher as nativeIsDefaultLauncher,
   requestDefaultLauncher as nativeRequestDefaultLauncher,
   openHomeSettings as nativeOpenHomeSettings,
   launchApp as nativeLaunchApp,
 } from 'expo-app-blocker';
+import { blockerEngine } from '../blocker/blocker-engine';
+
+export interface InstalledLauncherApp {
+  packageName: string;
+  name: string;
+}
+
+const NinjaLauncherNative = NativeModules.NinjaLauncherModule as
+  | {
+      getInstalledLauncherApps?: () => Promise<InstalledLauncherApp[]>;
+    }
+  | undefined;
+
+export async function getRealtimeInstalledLauncherApps(): Promise<InstalledLauncherApp[]> {
+  if (Platform.OS !== 'android') return [];
+  if (NinjaLauncherNative?.getInstalledLauncherApps) {
+    try {
+      const list = await NinjaLauncherNative.getInstalledLauncherApps();
+      if (Array.isArray(list) && list.length > 0) {
+        return list;
+      }
+    } catch (error) {
+      console.warn('[LauncherService] NinjaLauncherModule.getInstalledLauncherApps failed:', error);
+    }
+  }
+  const fallback = await blockerEngine.getInstalledApps(false);
+  return fallback.map((a) => ({ packageName: a.packageName, name: a.name }));
+}
+
+export function subscribeToPackageChanges(
+  onChanged: (payload: { reason?: string; packageName?: string }) => void
+): () => void {
+  if (Platform.OS !== 'android' || !NativeModules.NinjaLauncherModule) {
+    return () => {};
+  }
+  const emitter = new NativeEventEmitter(NativeModules.NinjaLauncherModule);
+  const sub = emitter.addListener('NinjaPackageChanged', onChanged);
+  return () => sub.remove();
+}
 
 export interface LauncherStatus {
   isSupported: boolean;

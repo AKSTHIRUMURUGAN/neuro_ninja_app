@@ -29,6 +29,8 @@ import {
   promptSetDefaultLauncher,
   openNormalLauncherSettings,
   launchApplication,
+  getRealtimeInstalledLauncherApps,
+  subscribeToPackageChanges,
 } from '../../services/launcher/launcher-service';
 import {
   searchContacts,
@@ -256,33 +258,6 @@ export default function GhostLauncherScreen() {
     return () => clearInterval(timer);
   }, [mindfulDelayApp]);
 
-  // Check launcher status and register resume listener
-  useEffect(() => {
-    let isMounted = true;
-    void checkLauncherStatus().then((status) => {
-      if (isMounted) {
-        setIsDefaultLauncher(status.isDefault);
-        setIsLauncherSupported(status.isSupported);
-      }
-    });
-
-    const sub = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        void checkLauncherStatus().then((status) => {
-          if (isMounted) {
-            setIsDefaultLauncher(status.isDefault);
-            setIsLauncherSupported(status.isSupported);
-          }
-        });
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      sub.remove();
-    };
-  }, []);
-
   // Load Real Installed Applications (Optimized for 0ms Boot & ANR Prevention, auto-refreshed for newly installed apps)
   const loadInstalledApps = useCallback(async (forceRefresh = false) => {
     try {
@@ -300,9 +275,9 @@ export default function GhostLauncherScreen() {
         }
       }
 
-      // Step 2: Fresh query from native PackageManager
+      // Step 2: Fresh query from native LauncherApps + PackageManager(MATCH_ALL)
       const [installedApps, savedPrefsRaw] = await Promise.all([
-        blockerEngine.getInstalledApps(false),
+        getRealtimeInstalledLauncherApps(),
         AsyncStorage.getItem('@ghost_launcher_user_prefs_v2'),
       ]);
 
@@ -412,6 +387,41 @@ export default function GhostLauncherScreen() {
       void loadInstalledApps(true);
     }, [loadInstalledApps])
   );
+
+  // Check launcher status, AppState resume, and real-time Android package install/uninstall watcher
+  useEffect(() => {
+    let isMounted = true;
+    void checkLauncherStatus().then((status) => {
+      if (isMounted) {
+        setIsDefaultLauncher(status.isDefault);
+        setIsLauncherSupported(status.isSupported);
+      }
+    });
+
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        void checkLauncherStatus().then((status) => {
+          if (isMounted) {
+            setIsDefaultLauncher(status.isDefault);
+            setIsLauncherSupported(status.isSupported);
+          }
+        });
+        void loadInstalledApps(true);
+      }
+    });
+
+    const unsubPkg = subscribeToPackageChanges(() => {
+      if (isMounted) {
+        void loadInstalledApps(true);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      sub.remove();
+      unsubPkg();
+    };
+  }, [loadInstalledApps]);
 
   const handleLaunchApp = async (app: GhostApp, bypassDelay = false) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
