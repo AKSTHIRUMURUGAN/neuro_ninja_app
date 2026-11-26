@@ -45,6 +45,13 @@ class NinjaAccessibilityService : AccessibilityService() {
       },
       onSafeSurfaceDetected = { pkg ->
         reelTrackerEngine?.cancelPendingDwell()
+      },
+      onModalStateChanged = { pkg, isOpen ->
+        if (isOpen) {
+          reelTrackerEngine?.onModalOpened(pkg)
+        } else {
+          reelTrackerEngine?.onModalClosed(pkg)
+        }
       }
     )
 
@@ -114,14 +121,16 @@ class NinjaAccessibilityService : AccessibilityService() {
     }
 
     val monitored = AppBlockerPrefs.getMonitoredHudPackages(this)
-    val isCandidateApp = pkg in monitored ||
+    val isCandidateApp = (pkg in monitored ||
       pkg in AppBlockerPrefs.DEFAULT_MONITORED_PACKAGES ||
       pkg.contains("youtube") ||
       pkg.contains("instagram") ||
       pkg.contains("tiktok") ||
       pkg.contains("musically") ||
       pkg.contains("snapchat") ||
-      pkg.contains("facebook")
+      pkg.contains("facebook.katana")) &&
+      !pkg.contains("whatsapp") &&
+      !pkg.contains("facebook.orca")
 
     if (!isCandidateApp) {
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -152,54 +161,20 @@ class NinjaAccessibilityService : AccessibilityService() {
     when (event.eventType) {
       AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
         val source = try { event.source } catch (_: Exception) { null }
-        val sourceId = source?.viewIdResourceName?.lowercase() ?: ""
-        val sourceClass = event.className?.toString()?.lowercase() ?: ""
+        val root = try { rootInActiveWindow } catch (_: Exception) { null }
+        val isShortScroll = ShortVideoDetector.isValidShortVideoScroll(pkg, source, root)
         ShortVideoDetector.recycleNode(source)
-
-        val isShortScroll = when {
-          pkg.contains("youtube") -> {
-            // Strictly require reel_recycler or shorts container for YouTube
-            sourceId.contains("reel_recycler") || sourceId.contains("shorts_recycler") ||
-              (sourceId.contains("reel") && !sourceId.contains("time_bar"))
-          }
-          pkg.contains("instagram") -> {
-            // Reject Direct Messages, Chat Threads, Notifications, Feed posts, DMs
-            if (sourceId.contains("direct") || sourceId.contains("thread") ||
-              sourceId.contains("message") || sourceId.contains("inbox") ||
-              sourceId.contains("row_feed") || sourceId.contains("composer")
-            ) {
-              false
-            } else {
-              val root = try { rootInActiveWindow } catch (_: Exception) { null }
-              val isCommentsOpen = ShortVideoDetector.isInstagramCommentSheetActive(root)
-              val isReelsActive = ShortVideoDetector.activeShortVideoPackage == pkg ||
-                ShortVideoDetector.hasInstagramReelIndicators(root, pkg)
-              ShortVideoDetector.recycleNode(root)
-              if (isCommentsOpen) {
-                false
-              } else {
-                sourceId.contains("clips") || sourceId.contains("reel") ||
-                  sourceClass.contains("viewpager") || sourceClass.contains("recyclerview") ||
-                  sourceClass.contains("compose") || sourceClass.contains("componenthost") ||
-                  isReelsActive
-              }
-            }
-          }
-          else -> true
-        }
 
         if (isShortScroll) {
           reelTrackerEngine?.onPhysicalScroll(pkg)
           reelDetectionWorker?.scheduleInspect(pkg)
         } else {
-          // Normal feed/DM/comment scroll: only inspect if not confirmed safe/comment surface
-          val root = try { rootInActiveWindow } catch (_: Exception) { null }
-          val isSafe = ShortVideoDetector.isExplicitSafeSurface(pkg, root)
-          ShortVideoDetector.recycleNode(root)
-          if (!isSafe) {
-            reelDetectionWorker?.scheduleInspect(pkg)
+          val isModal = ShortVideoDetector.isModalOrDrawerOpen(pkg, root)
+          if (isModal) {
+            reelTrackerEngine?.onModalOpened(pkg)
           }
         }
+        ShortVideoDetector.recycleNode(root)
       }
 
       AccessibilityEvent.TYPE_VIEW_SELECTED -> {

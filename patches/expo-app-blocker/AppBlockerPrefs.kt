@@ -62,9 +62,15 @@ object AppBlockerPrefs {
     "com.twitter.android",
     "com.zhiliaoapp.musically",
     "com.facebook.katana",
-    "com.bytedance.tiktok",
+    "com.bytedance.tiktok"
+  )
+
+  private val NON_REEL_MESSAGING_PACKAGES = setOf(
+    "com.whatsapp",
+    "com.whatsapp.w4b",
     "com.facebook.orca",
-    "com.whatsapp"
+    "org.telegram.messenger",
+    "com.discord"
   )
 
   val BANKING_PACKAGES = setOf(
@@ -346,8 +352,10 @@ object AppBlockerPrefs {
     get(context).edit().putBoolean(KEY_FLOATING_HUD_ENABLED, enabled).apply()
   }
 
-  fun getMonitoredHudPackages(context: Context): Set<String> =
-    get(context).getStringSet(KEY_MONITORED_HUD_PACKAGES, DEFAULT_MONITORED_PACKAGES) ?: DEFAULT_MONITORED_PACKAGES
+  fun getMonitoredHudPackages(context: Context): Set<String> {
+    val raw = get(context).getStringSet(KEY_MONITORED_HUD_PACKAGES, DEFAULT_MONITORED_PACKAGES) ?: DEFAULT_MONITORED_PACKAGES
+    return raw.filter { it !in NON_REEL_MESSAGING_PACKAGES }.toSet()
+  }
 
   fun setMonitoredHudPackages(context: Context, packages: Collection<String>) {
     get(context).edit().putStringSet(KEY_MONITORED_HUD_PACKAGES, packages.toSet()).apply()
