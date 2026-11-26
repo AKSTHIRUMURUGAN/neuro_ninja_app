@@ -1556,5 +1556,49 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
     await db.execAsync('PRAGMA user_version = 13');
   }
+
+  if (currentVersion < 14) {
+    console.log('[SQLite] Migrating to v14 (Modular STT/TTS/VAD Voice Packs)...');
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS voice_pack_modules (
+        id TEXT PRIMARY KEY,
+        language_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        native_name TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        licence TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        sha256 TEXT,
+        manifest_json TEXT,
+        download_url TEXT,
+        local_dir TEXT,
+        status TEXT NOT NULL DEFAULT 'not_installed',
+        is_active INTEGER NOT NULL DEFAULT 0,
+        downloaded_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO voice_pack_modules
+        (id, language_id, display_name, native_name, capability, model_name, licence, size_bytes, status, is_active, updated_at)
+      VALUES
+        ('vad-silero-v1', 'shared', 'Silero VAD (Shared)', 'Universal Silence Trim', 'vad', 'silero_vad.onnx (int8)', 'MIT', 2200000, 'not_installed', 1, datetime('now')),
+        ('stt-base-multilingual', 'base', 'Compact Multilingual Base', 'Tier-2 Fallback STT', 'stt', 'Whisper-tiny / SenseVoice-small (int8)', 'Apache 2.0 / MIT', 40000000, 'not_installed', 1, datetime('now')),
+        ('stt-en-in', 'en-IN', 'English STT', 'English', 'stt', 'sherpa-onnx-zipformer-en (int8)', 'Apache 2.0', 34000000, 'not_installed', 1, datetime('now')),
+        ('tts-en-in', 'en-IN', 'English TTS', 'English', 'tts', 'Kokoro-82M / VITS-VCTK', 'Apache 2.0 / MIT', 34000000, 'not_installed', 1, datetime('now')),
+        ('stt-ta-in', 'ta-IN', 'Tamil STT', 'தமிழ்', 'stt', 'AI4Bharat IndicConformer (int8)', 'MIT', 120000000, 'not_installed', 0, datetime('now')),
+        ('tts-ta-in', 'ta-IN', 'Tamil TTS', 'தமிழ்', 'tts', 'AI4Bharat Indic-TTS (VITS)', 'MIT', 32000000, 'not_installed', 0, datetime('now')),
+        ('stt-hi-in', 'hi-IN', 'Hindi STT', 'हिन्दी', 'stt', 'AI4Bharat IndicConformer (int8)', 'MIT', 120000000, 'not_installed', 0, datetime('now')),
+        ('tts-hi-in', 'hi-IN', 'Hindi TTS', 'हिन्दी', 'tts', 'AI4Bharat Indic-TTS (VITS)', 'MIT', 32000000, 'not_installed', 0, datetime('now')),
+        ('stt-te-in', 'te-IN', 'Telugu STT', 'తెలుగు', 'stt', 'AI4Bharat IndicConformer (int8)', 'MIT', 120000000, 'not_installed', 0, datetime('now')),
+        ('tts-te-in', 'te-IN', 'Telugu TTS', 'తెలుగు', 'tts', 'AI4Bharat Indic-TTS (VITS)', 'MIT', 32000000, 'not_installed', 0, datetime('now')),
+        ('stt-ml-in', 'ml-IN', 'Malayalam STT', 'മലയാളം', 'stt', 'AI4Bharat IndicConformer (int8)', 'MIT', 120000000, 'not_installed', 0, datetime('now')),
+        ('tts-ml-in', 'ml-IN', 'Malayalam TTS', 'മലയാളം', 'tts', 'AI4Bharat Indic-TTS (VITS)', 'MIT', 32000000, 'not_installed', 0, datetime('now')),
+        ('stt-kn-in', 'kn-IN', 'Kannada STT', 'ಕನ್ನಡ', 'stt', 'AI4Bharat IndicConformer (int8)', 'MIT', 120000000, 'not_installed', 0, datetime('now')),
+        ('tts-kn-in', 'kn-IN', 'Kannada TTS', 'ಕನ್ನಡ', 'tts', 'AI4Bharat Indic-TTS (VITS)', 'MIT', 32000000, 'not_installed', 0, datetime('now'));
+    `);
+
+    await db.execAsync('PRAGMA user_version = 14');
+  }
 }
 
