@@ -874,6 +874,25 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Offline Voice Packs (sherpa-onnx + AI4Bharat Indic STT & TTS) */}
+        <View style={styles.card}>
+          <Text style={styles.cardHeading}>OFFLINE VOICE ENGINE (STT & TTS)</Text>
+
+          <TouchableOpacity
+            style={[styles.actionRow, { borderBottomWidth: 0 }]}
+            onPress={() => router.push('/lifeos/settings/voice-packs' as any)}
+          >
+            <MaterialCommunityIcons name="microphone-settings" size={22} color="#38BDF8" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionRowTitle}>Offline Voice Packs & Licences</Text>
+              <Text style={styles.actionRowSub}>
+                Download English, Tamil, Hindi & Indic models (sherpa-onnx + AI4Bharat MIT/Apache)
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+
         {/* Emergency & Reset Controls */}
         {/* Cloud Sync & Production Connect */}
         <View style={styles.card}>

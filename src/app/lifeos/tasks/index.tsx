@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import * as Speech from 'expo-speech';
+import { voiceService } from '../../../services/voice/voice-service';
 
 import {
   createTask,
@@ -638,7 +638,7 @@ export default function TasksScreen() {
                 style={styles.confirmBtn}
                 onPress={() => {
                   setVoiceConsent(true);
-                  Speech.speak('Ready for task dictation. Use your keyboard mic or type below.', {
+                  void voiceService.speak('Ready for task dictation. Tap mic or type below.', {
                     rate: 1.0,
                   });
                 }}

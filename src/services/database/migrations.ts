@@ -1522,5 +1522,39 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
     await db.execAsync('PRAGMA user_version = 12');
   }
+
+  if (currentVersion < 13) {
+    console.log('[SQLite] Migrating to v13 (Offline Voice Packs & Licences)...');
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS voice_language_packs (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        native_name TEXT NOT NULL,
+        stt_model_name TEXT NOT NULL,
+        tts_model_name TEXT NOT NULL,
+        licence TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        sha256 TEXT,
+        download_url TEXT,
+        local_dir TEXT,
+        status TEXT NOT NULL DEFAULT 'not_installed',
+        is_active INTEGER NOT NULL DEFAULT 0,
+        downloaded_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO voice_language_packs
+        (id, display_name, native_name, stt_model_name, tts_model_name, licence, size_bytes, status, is_active, updated_at)
+      VALUES
+        ('en-IN', 'English (India / Global)', 'English', 'sherpa-onnx-zipformer-en (int8)', 'Kokoro-82M / VITS-VCTK', 'Apache 2.0 / MIT', 68000000, 'not_installed', 1, datetime('now')),
+        ('ta-IN', 'Tamil', 'தமிழ்', 'AI4Bharat IndicConformer (int8)', 'AI4Bharat Indic-TTS', 'MIT', 74000000, 'not_installed', 0, datetime('now')),
+        ('hi-IN', 'Hindi', 'हिन्दी', 'AI4Bharat IndicConformer (int8)', 'AI4Bharat Indic-TTS', 'MIT', 74000000, 'not_installed', 0, datetime('now')),
+        ('te-IN', 'Telugu', 'తెలుగు', 'AI4Bharat IndicConformer (int8)', 'AI4Bharat Indic-TTS', 'MIT', 72000000, 'not_installed', 0, datetime('now')),
+        ('ml-IN', 'Malayalam', 'മലയാളം', 'AI4Bharat IndicConformer (int8)', 'AI4Bharat Indic-TTS', 'MIT', 72000000, 'not_installed', 0, datetime('now')),
+        ('kn-IN', 'Kannada', 'ಕನ್ನಡ', 'AI4Bharat IndicConformer (int8)', 'AI4Bharat Indic-TTS', 'MIT', 72000000, 'not_installed', 0, datetime('now'));
+    `);
+
+    await db.execAsync('PRAGMA user_version = 13');
+  }
 }
 

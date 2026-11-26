@@ -16,7 +16,7 @@ import {
   FinanceTransaction,
 } from '../../services/finance/finance-types';
 import { parseVoiceExpense } from '../../services/finance/parsers/voice-expense-parser';
-import { voiceBridge } from '../../services/finance/native-finance-bridge';
+import { voiceService } from '../../services/voice/voice-service';
 
 export interface VoiceExpenseModalProps {
   visible: boolean;
@@ -70,30 +70,32 @@ export function VoiceExpenseModal({
 
   useEffect(() => {
     if (!visible) {
-      void voiceBridge.cancelListening();
+      void voiceService.cancelListening();
       return;
     }
-    const emitter = voiceBridge.getEmitter();
-    if (!emitter) return;
-    const subPartial = emitter.addListener('NinjaVoicePartial', (e: { value?: string }) => {
-      if (e?.value) setTranscript(e.value);
-    });
-    const subEnd = emitter.addListener('NinjaVoiceEnd', () => {
-      setIsListening(false);
-    });
-    const subErr = emitter.addListener('NinjaVoiceError', (e: { value?: string }) => {
-      setIsListening(false);
-      if (e?.value) setVoiceError(e.value);
-    });
+    const offlineEmitter = voiceService.getOfflineEmitter();
+    const subOffline = offlineEmitter?.addListener(
+      'NinjaOfflineSpeechResult',
+      (e: { value?: string }) => {
+        setIsListening(false);
+        if (e?.value) setTranscript(e.value);
+      }
+    );
+    const subOfflineErr = offlineEmitter?.addListener(
+      'NinjaOfflineSpeechError',
+      (e: { value?: string }) => {
+        setIsListening(false);
+        if (e?.value) setVoiceError(e.value);
+      }
+    );
     return () => {
-      subPartial.remove();
-      subEnd.remove();
-      subErr.remove();
+      subOffline?.remove();
+      subOfflineErr?.remove();
     };
   }, [visible]);
 
   const handleClose = () => {
-    void voiceBridge.cancelListening();
+    void voiceService.cancelListening();
     setIsListening(false);
     setVoiceError(null);
     onClose();
@@ -103,17 +105,19 @@ export function VoiceExpenseModal({
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setVoiceError(null);
     if (isListening) {
-      await voiceBridge.stopListening();
+      await voiceService.stopListening();
       setIsListening(false);
       return;
     }
 
     try {
       setIsListening(true);
-      const result = await voiceBridge.startListening('en-IN');
+      const res = await voiceService.startListening({
+        onPartial: (partial) => setTranscript(partial),
+      });
       setIsListening(false);
-      if (result) {
-        setTranscript(result);
+      if (res.text) {
+        setTranscript(res.text);
       }
     } catch (e: unknown) {
       setIsListening(false);
