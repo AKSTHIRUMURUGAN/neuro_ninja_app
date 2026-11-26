@@ -94,36 +94,33 @@ class VillainEngine {
       "SELECT COUNT(*) as count FROM weekly_villains WHERE status = 'defeated'"
     );
 
-    // 4. Equipped weapon based on focus streak / achievements
-    const streakRow = await db.getFirstAsync<{ value_json: string }>(
-      "SELECT value_json FROM lifeos_state WHERE key = 'active_streak_days'"
-    );
-    const streakDays = streakRow ? parseInt(streakRow.value_json, 10) : 1;
+    // 4. Equipped weapon and health from unified RPG state
+    const rpgRow = await db.getFirstAsync<{
+      current_hp: number;
+      max_hp: number;
+      equipped_weapon_id: string;
+      sentry_gate_durability: number;
+      sentry_gate_max: number;
+    }>('SELECT current_hp, max_hp, equipped_weapon_id, sentry_gate_durability, sentry_gate_max FROM player_rpg_state WHERE id = ?', ['current_player']);
 
     let weapon = {
-      name: 'Bonsai Shinai',
-      multiplier: 1.0,
+      name: 'Bamboo Shinai',
+      multiplier: 1.2,
       icon: 'sword',
     };
 
-    if (streakDays >= 14) {
-      weapon = {
-        name: 'Muramasa of Pure Focus',
-        multiplier: 2.0,
-        icon: 'sword-cross',
-      };
-    } else if (streakDays >= 7) {
-      weapon = {
-        name: 'Titanium Flowblade',
-        multiplier: 1.5,
-        icon: 'lightning-bolt',
-      };
-    } else if (streakDays >= 3) {
-      weapon = {
-        name: 'Shadow Katana',
-        multiplier: 1.25,
-        icon: 'sword',
-      };
+    if (rpgRow) {
+      const weaponRow = await db.getFirstAsync<{ name: string; multiplier: number; icon: string }>(
+        'SELECT name, multiplier, icon FROM weapons_catalog WHERE weapon_id = ?',
+        [rpgRow.equipped_weapon_id]
+      );
+      if (weaponRow) {
+        weapon = {
+          name: weaponRow.name,
+          multiplier: weaponRow.multiplier,
+          icon: weaponRow.icon,
+        };
+      }
     }
 
     return {
@@ -300,154 +297,41 @@ class VillainEngine {
   }
 
   /**
-   * Deal real focus damage to active villains scaled by equipped weapon multiplier
+   * Deal real focus damage to active villains scaled by equipped weapon multiplier.
+   * Delegates to unifiedGamificationEngine for unified RPG progression, castle stone, and clan raid impact.
    */
   async dealDamage(source: ActionSource, baseAmount: number, actionName: string): Promise<DamageResult> {
-    const db = await getDatabase();
-    const now = new Date().toISOString();
+    const { unifiedGamificationEngine } = await import('../gamification/unified-gamification-engine');
+    const res = await unifiedGamificationEngine.dealActionDamage(source, baseAmount, actionName);
 
-    const [player, daily, weekly] = await Promise.all([
-      this.getPlayerRpgProfile(),
+    const [daily, weekly] = await Promise.all([
       this.getActiveDailyVillain(),
       this.getActiveWeeklyVillain(),
     ]);
 
-    const weaponMultiplier = player.equippedWeapon.multiplier;
-    const finalDamage = Math.round(baseAmount * weaponMultiplier);
-
-    let dailyDefeated = false;
-    let weeklyDefeated = false;
-    let coinsEarned = 0;
-    let xpEarned = 0;
-    let dailyRemaining = daily?.currentHp ?? 0;
-    let weeklyRemaining = weekly?.currentHp ?? 0;
-
-    // 1. Damage Daily Boss
-    if (daily && daily.status === 'active') {
-      const nextHp = Math.max(0, daily.currentHp - finalDamage);
-      dailyRemaining = nextHp;
-      const isDefeated = nextHp === 0;
-
-      await db.runAsync(
-        'UPDATE daily_villains SET current_hp = ?, status = ? WHERE id = ?',
-        [nextHp, isDefeated ? 'defeated' : 'active', daily.id]
-      );
-
-      if (isDefeated) {
-        dailyDefeated = true;
-        coinsEarned += daily.coinsBounty;
-        xpEarned += daily.xpBounty;
-
-        // Credit coins
-        await walletService.creditCoins(
-          daily.coinsBounty,
-          daily.xpBounty,
-          'goal',
-          `Defeated Boss: ${daily.name} (${player.equippedWeapon.name}) 🗡️`,
-          daily.id
-        );
-
-        // Award soul shard
-        const nextShards = player.soulShards + 1;
-        await db.runAsync(
-          "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('player_soul_shards', ?, ?)",
-          [nextShards.toString(), now]
-        );
-      }
-
-      await db.runAsync(
-        `INSERT INTO villain_combat_logs (
-          id, villain_id, villain_type, action_source, damage_dealt, counter_damage, log_text, created_at
-        ) VALUES (?, ?, 'daily', ?, ?, 0, ?, ?)`,
-        [
-          'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-          daily.id,
-          source,
-          finalDamage,
-          `${player.equippedWeapon.name} dealt -${finalDamage} HP to ${daily.name} via ${actionName}`,
-          now,
-        ]
-      );
-    }
-
-    // 2. Also damage Weekly Raid Boss
-    if (weekly && weekly.status === 'active') {
-      const nextWeeklyHp = Math.max(0, weekly.currentHp - finalDamage);
-      weeklyRemaining = nextWeeklyHp;
-      const isWeeklyDefeated = nextWeeklyHp === 0;
-
-      // Adjust phase based on HP %
-      const hpPercent = (nextWeeklyHp / weekly.maxHp) * 100;
-      const nextPhase = hpPercent > 66 ? 1 : hpPercent > 33 ? 2 : 3;
-
-      await db.runAsync(
-        'UPDATE weekly_villains SET current_hp = ?, phase = ?, status = ? WHERE id = ?',
-        [nextWeeklyHp, nextPhase, isWeeklyDefeated ? 'defeated' : 'active', weekly.id]
-      );
-
-      if (isWeeklyDefeated) {
-        weeklyDefeated = true;
-        coinsEarned += weekly.coinsBounty;
-        xpEarned += weekly.xpBounty;
-        await walletService.creditCoins(
-          weekly.coinsBounty,
-          weekly.xpBounty,
-          'goal',
-          `Vanquished World Raid Boss: ${weekly.name} 🏆`,
-          weekly.id
-        );
-      }
-    }
-
-    // 3. Repair player shield on successful focus action
-    await this.repairPlayerShield(10);
-
     return {
-      damageDealt: finalDamage,
-      weaponMultiplier,
-      dailyDefeated,
-      weeklyDefeated,
-      dailyRemainingHp: dailyRemaining,
-      weeklyRemainingHp: weeklyRemaining,
-      coinsEarned,
-      xpEarned,
-      lootItem: dailyDefeated ? 'item_soul_shard' : undefined,
+      damageDealt: res.damageDealt,
+      weaponMultiplier: res.weaponMultiplier,
+      dailyDefeated: res.dailyDefeated,
+      weeklyDefeated: res.weeklyDefeated,
+      dailyRemainingHp: daily?.currentHp ?? 0,
+      weeklyRemainingHp: weekly?.currentHp ?? 0,
+      coinsEarned: res.coinsEarned,
+      xpEarned: res.xpEarned,
+      lootItem: res.dailyDefeated ? 'item_soul_shard' : undefined,
     };
   }
 
   /**
-   * Inflict damage on player shield when giving up or breaching app
+   * Inflict damage on player HP and Castle Sentry Gates when giving up or breaching app
    */
   async takeCounterDamage(amount: number, appName: string): Promise<{ damage: number; logText: string }> {
-    const db = await getDatabase();
-    const player = await this.getPlayerRpgProfile();
-    const daily = await this.getActiveDailyVillain();
-    const now = new Date().toISOString();
-
-    const nextShield = Math.max(0, player.shieldHp - amount);
-    await db.runAsync(
-      "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('player_shield_hp', ?, ?)",
-      [nextShield.toString(), now]
-    );
-
-    const logText = `${daily?.name || 'Villain'} counter-attacked for ${amount} damage due to opening ${appName}! Shield: ${nextShield}/100`;
-
-    if (daily) {
-      await db.runAsync(
-        `INSERT INTO villain_combat_logs (
-          id, villain_id, villain_type, action_source, damage_dealt, counter_damage, log_text, created_at
-        ) VALUES (?, ?, 'daily', 'breach_penalty', 0, ?, ?, ?)`,
-        [
-          'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-          daily.id,
-          amount,
-          logText,
-          now,
-        ]
-      );
-    }
-
-    return { damage: amount, logText };
+    const { unifiedGamificationEngine } = await import('../gamification/unified-gamification-engine');
+    const penalty = await unifiedGamificationEngine.applyDistractionBreach(appName, `App breach penalty (${amount} dmg)`);
+    return {
+      damage: penalty.counterDamage,
+      logText: penalty.logText,
+    };
   }
 
   /**

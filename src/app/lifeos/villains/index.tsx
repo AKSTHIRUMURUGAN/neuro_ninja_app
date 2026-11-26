@@ -136,6 +136,57 @@ export default function VillainsScreen() {
         </View>
       )}
 
+      {/* Ninja World Quick Shortcuts */}
+      <View style={styles.realmShortcutsRow}>
+        <TouchableOpacity
+          style={styles.realmShortcutBtn}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/lifeos/castle' as any);
+          }}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="castle" size={16} color="#F59E0B" />
+          <Text style={styles.realmShortcutText}>Citadel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.realmShortcutBtn}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/lifeos/forge' as any);
+          }}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="anvil" size={16} color="#00E699" />
+          <Text style={styles.realmShortcutText}>Forge</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.realmShortcutBtn}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/lifeos/friends' as any);
+          }}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="account-group" size={16} color="#38BDF8" />
+          <Text style={styles.realmShortcutText}>Clan Raids</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.realmShortcutBtn}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/lifeos/profile' as any);
+          }}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="account-badge-outline" size={16} color="#A855F7" />
+          <Text style={styles.realmShortcutText}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Tabs */}
       <View style={styles.tabBar}>
         <TouchableOpacity
@@ -987,5 +1038,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 18,
+  },
+  realmShortcutsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  realmShortcutBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0F1829',
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  realmShortcutText: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

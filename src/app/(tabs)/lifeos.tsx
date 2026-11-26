@@ -466,6 +466,58 @@ export default function LifeOSHubScreen() {
             <Text style={styles.hubSub}>Combat damage from habits, raid loot & live HP</Text>
           </TouchableOpacity>
 
+          {/* Ninja Citadel */}
+          <TouchableOpacity
+            style={styles.hubCard}
+            onPress={() => router.push('/lifeos/castle' as any)}
+          >
+            <View style={[styles.hubIcon, { backgroundColor: 'rgba(245, 158, 11, 0.14)' }]}>
+              <MaterialCommunityIcons name="castle" size={24} color="#F59E0B" />
+            </View>
+            <Text style={styles.hubTitle}>Ninja Citadel</Text>
+            <Text style={styles.hubMeta}>Domain & Mystery Vault</Text>
+            <Text style={styles.hubSub}>Tenshu fortress, Sentry Gates, Zen Springs & loot chests</Text>
+          </TouchableOpacity>
+
+          {/* Dojo Forge */}
+          <TouchableOpacity
+            style={styles.hubCard}
+            onPress={() => router.push('/lifeos/forge' as any)}
+          >
+            <View style={[styles.hubIcon, { backgroundColor: 'rgba(0, 230, 153, 0.14)' }]}>
+              <MaterialCommunityIcons name="anvil" size={24} color="#00E699" />
+            </View>
+            <Text style={styles.hubTitle}>Dojo Forge</Text>
+            <Text style={styles.hubMeta}>Weapons Arsenal</Text>
+            <Text style={styles.hubSub}>Forge Katanas, Shurikens, damage multipliers & passive perks</Text>
+          </TouchableOpacity>
+
+          {/* Shadow Clan & Co-Op Raids */}
+          <TouchableOpacity
+            style={styles.hubCard}
+            onPress={() => router.push('/lifeos/friends' as any)}
+          >
+            <View style={[styles.hubIcon, { backgroundColor: 'rgba(56, 189, 248, 0.14)' }]}>
+              <MaterialCommunityIcons name="account-group" size={24} color="#38BDF8" />
+            </View>
+            <Text style={styles.hubTitle}>Shadow Clan</Text>
+            <Text style={styles.hubMeta}>Friends & Co-op Raids</Text>
+            <Text style={styles.hubSub}>Shinobi alliance, Akuma Colossus raid & smoke bomb alerts</Text>
+          </TouchableOpacity>
+
+          {/* Shinobi Profile & Belt Ranks */}
+          <TouchableOpacity
+            style={styles.hubCard}
+            onPress={() => router.push('/lifeos/profile' as any)}
+          >
+            <View style={[styles.hubIcon, { backgroundColor: 'rgba(168, 85, 247, 0.14)' }]}>
+              <MaterialCommunityIcons name="account-badge" size={24} color="#A855F7" />
+            </View>
+            <Text style={styles.hubTitle}>Shinobi Profile</Text>
+            <Text style={styles.hubMeta}>Belt Ranks & Stats</Text>
+            <Text style={styles.hubSub}>White to Shadow Grandmaster, combat passport & tag</Text>
+          </TouchableOpacity>
+
           {/* Dynamic Challenges */}
           <TouchableOpacity
             style={styles.hubCard}

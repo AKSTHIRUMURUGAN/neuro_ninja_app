@@ -1,6 +1,6 @@
 import type * as SQLite from 'expo-sqlite';
 
-export const CURRENT_DB_VERSION = 9;
+export const CURRENT_DB_VERSION = 10;
 
 const SCHEMA_V1 = `
 PRAGMA journal_mode = WAL;
@@ -1278,6 +1278,133 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     `);
 
     await db.execAsync('PRAGMA user_version = 9');
+  }
+
+  if (currentVersion < 10) {
+    // V10: Unified Gamification Universe (RPG State, Armory Weapons, Mystery Chests, Citadel Castle Buildings, Ninja Friends & Clan Raids)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS player_rpg_state (
+        id TEXT PRIMARY KEY,
+        player_level INTEGER NOT NULL DEFAULT 1,
+        current_xp INTEGER NOT NULL DEFAULT 0,
+        current_hp INTEGER NOT NULL DEFAULT 100,
+        max_hp INTEGER NOT NULL DEFAULT 100,
+        equipped_weapon_id TEXT NOT NULL DEFAULT 'wpn_shinai',
+        equipped_title TEXT NOT NULL DEFAULT 'Dojo Initiate',
+        ninja_belt TEXT NOT NULL DEFAULT 'White Belt',
+        castle_stone INTEGER NOT NULL DEFAULT 100,
+        tenshu_level INTEGER NOT NULL DEFAULT 1,
+        sentry_gate_durability INTEGER NOT NULL DEFAULT 100,
+        sentry_gate_max INTEGER NOT NULL DEFAULT 100,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS weapons_catalog (
+        weapon_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        tier INTEGER NOT NULL,
+        multiplier REAL NOT NULL,
+        icon TEXT NOT NULL,
+        description TEXT NOT NULL,
+        passive_effect_type TEXT,
+        cost_coins INTEGER NOT NULL DEFAULT 0,
+        cost_stone INTEGER NOT NULL DEFAULT 0,
+        min_player_level INTEGER NOT NULL DEFAULT 1,
+        is_unlocked INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS player_chests (
+        chest_id TEXT PRIMARY KEY,
+        tier TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'unopened',
+        source_action TEXT NOT NULL,
+        awarded_at TEXT NOT NULL,
+        opened_at TEXT,
+        loot_summary_json TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS castle_buildings (
+        building_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        level INTEGER NOT NULL DEFAULT 1,
+        max_level INTEGER NOT NULL DEFAULT 10,
+        current_durability INTEGER NOT NULL DEFAULT 100,
+        max_durability INTEGER NOT NULL DEFAULT 100,
+        perk_description TEXT NOT NULL,
+        upgrade_stone_cost INTEGER NOT NULL DEFAULT 150,
+        upgrade_coin_cost INTEGER NOT NULL DEFAULT 200,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ninja_friends (
+        friend_id TEXT PRIMARY KEY,
+        ninja_tag TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        avatar_url TEXT,
+        belt_rank TEXT NOT NULL,
+        equipped_weapon_name TEXT NOT NULL,
+        streak_days INTEGER NOT NULL DEFAULT 0,
+        total_focus_minutes INTEGER NOT NULL DEFAULT 0,
+        castle_level INTEGER NOT NULL DEFAULT 1,
+        is_clan_member INTEGER NOT NULL DEFAULT 0,
+        last_active_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS clan_raid_contributions (
+        id TEXT PRIMARY KEY,
+        week_id TEXT NOT NULL,
+        friend_id TEXT NOT NULL,
+        damage_dealt INTEGER NOT NULL DEFAULT 0,
+        action_summary TEXT,
+        contributed_at TEXT NOT NULL
+      );
+    `);
+
+    // Seed weapons catalog
+    await db.execAsync(`
+      INSERT OR IGNORE INTO weapons_catalog (weapon_id, name, tier, multiplier, icon, description, passive_effect_type, cost_coins, cost_stone, min_player_level, is_unlocked) VALUES
+      ('wpn_hands', 'Bare Fists', 0, 1.0, 'hand-back-fist', 'Basic hand-to-hand discipline strikes.', 'none', 0, 0, 1, 1),
+      ('wpn_shinai', 'Bamboo Shinai', 1, 1.2, 'sword', 'Traditional dojo bamboo practice blade. +5% bonus coins on habits.', 'coin_boost', 0, 0, 1, 1),
+      ('wpn_kunai', 'Steel Kunai', 2, 1.4, 'knife', 'Precision throwing dagger. Deals +10% damage to Discipline bosses.', 'discipline_crit', 350, 100, 2, 0),
+      ('wpn_kusarigama', 'Shadow Kusarigama', 3, 1.7, 'link-variant', 'Weighted chain scythe. First task completed each morning deals 2.0x Critical.', 'morning_crit', 600, 250, 4, 0),
+      ('wpn_flowblade', 'Titanium Flowblade', 4, 2.1, 'lightning-bolt', 'Forged in deep focus. Completing 50m Pomodoro triggers a Slash Barrage (300 bonus damage).', 'pomodoro_barrage', 1000, 500, 6, 0),
+      ('wpn_muramasa', 'Muramasa of Pure Focus', 5, 2.6, 'sword-cross', 'Cursed obsidian katana. Slaying a villain instantly restores +25 Player Health.', 'life_steal', 1600, 800, 8, 0),
+      ('wpn_kusanagi', 'Divine Kusanagi', 6, 3.5, 'star-four-points', 'Mythic blade of the Emperor. Doubles all clan raid damage for 2 hours.', 'clan_raid_double', 3000, 1500, 10, 0);
+    `);
+
+    // Seed default Castle Buildings
+    await db.execAsync(`
+      INSERT OR IGNORE INTO castle_buildings (building_id, name, icon, level, max_level, current_durability, max_durability, perk_description, upgrade_stone_cost, upgrade_coin_cost, updated_at) VALUES
+      ('tenshu', 'Tenshu Grand Keep', 'castle', 1, 10, 100, 100, 'The heart of your sanctuary. Generates passive daily Chi Focus Coins based on your streak.', 200, 250, datetime('now')),
+      ('forge', 'Dojo Forge', 'anvil', 1, 10, 100, 100, 'Craft, sharpen, and unlock higher tier ninja weapons to multiply your boss combat damage.', 150, 200, datetime('now')),
+      ('springs', 'Zen Hot Springs', 'water-well', 1, 10, 100, 100, 'Natural mineral spring that restores Player Health & Shield HP during meditation and sleep.', 150, 200, datetime('now')),
+      ('gates', 'Sentry Watchtower Gates', 'shield-home', 1, 10, 100, 100, 'Absorbs distraction breaches and doomscroll damage before it damages your character health.', 180, 220, datetime('now')),
+      ('vault', 'Treasure Pavilion', 'treasure-chest', 1, 10, 100, 100, 'Safely stores your unopened Bamboo, Jade, Shadow, and Mythic mystery chests.', 120, 150, datetime('now'));
+    `);
+
+    // Seed default Player RPG State
+    await db.execAsync(`
+      INSERT OR IGNORE INTO player_rpg_state (id, player_level, current_xp, current_hp, max_hp, equipped_weapon_id, equipped_title, ninja_belt, castle_stone, tenshu_level, sentry_gate_durability, sentry_gate_max, updated_at) VALUES
+      ('current_player', 1, 0, 100, 100, 'wpn_shinai', 'Dojo Initiate', 'White Belt', 120, 1, 100, 100, datetime('now'));
+    `);
+
+    // Seed starter friends / clan members for Co-Op Raids
+    await db.execAsync(`
+      INSERT OR IGNORE INTO ninja_friends (friend_id, ninja_tag, display_name, avatar_url, belt_rank, equipped_weapon_name, streak_days, total_focus_minutes, castle_level, is_clan_member, last_active_at) VALUES
+      ('friend_kage', '#NINJA-KAGE1', 'Sensei Kage', NULL, 'Black Belt', 'Muramasa of Pure Focus', 42, 3840, 5, 1, datetime('now')),
+      ('friend_arjun', '#NINJA-8821', 'Arjun Focus', NULL, 'Green Belt', 'Titanium Flowblade', 14, 1260, 3, 1, datetime('now')),
+      ('friend_sneha', '#NINJA-4920', 'Sneha Zen', NULL, 'Purple Belt', 'Shadow Kusarigama', 21, 1980, 4, 1, datetime('now')),
+      ('friend_vikram', '#NINJA-1204', 'Vikram Void', NULL, 'Orange Belt', 'Steel Kunai', 7, 630, 2, 1, datetime('now'));
+    `);
+
+    // Seed initial Bamboo starter chest
+    await db.execAsync(`
+      INSERT OR IGNORE INTO player_chests (chest_id, tier, status, source_action, awarded_at, opened_at, loot_summary_json) VALUES
+      ('chest_starter_01', 'bamboo', 'unopened', 'Dojo Welcome Gift', datetime('now'), NULL, NULL);
+    `);
+
+    await db.execAsync('PRAGMA user_version = 10');
   }
 }
 
