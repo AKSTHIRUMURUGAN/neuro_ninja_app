@@ -180,12 +180,9 @@ object ShortVideoDetector {
     "reel_main_title"
   )
 
-  // NOTE: Do NOT include comments_entry_point_teaser_container (it is pinned on closed Shorts!)
+  // NOTE: YouTube keeps engagement_panel_wrapper / bottom_sheet_container pre-mounted in the tree;
+  // only treat YouTube modals as open when comment-sheet / share-sheet content is actually visible.
   private val YOUTUBE_MODAL_SHEET_IDS = listOf(
-    "engagement_panel_wrapper",
-    "engagement_panel",
-    "modern_bottom_sheet_container",
-    "bottom_sheet_container",
     "share_sheet_container"
   )
 
@@ -210,13 +207,13 @@ object ShortVideoDetector {
     "memories_grid"
   )
 
-  // Strong multi-signal modal cues (never single player buttons like "Send to" or "Add a comment")
+  // Strong multi-signal modal cues (never single player buttons like "Send to", "Add a comment", or "Comments")
   private val STRONG_COMMENT_SHEET_CUES = setOf(
     "no comments yet",
     "top comments",
     "newest first",
     "view replies",
-    "comments"
+    "timed"
   )
 
   private val STRONG_SHARE_SHEET_CUES = setOf(
@@ -318,11 +315,12 @@ object ShortVideoDetector {
     fun scanModalMarkers(node: AccessibilityNodeInfo?, depth: Int) {
       if (node == null || depth > MODAL_SCAN_DEPTH || hasLargeSheetId) return
       val resId = node.viewIdResourceName?.lowercase() ?: ""
-      if (resId.contains("bottom_sheet") ||
-        resId.contains("engagement_panel") ||
-        resId.contains("comments_recycler") ||
-        resId.contains("sharesheet") ||
-        resId.contains("direct_share_sheet")
+      if (!packageName.contains("youtube") && (
+          resId.contains("bottom_sheet") ||
+          resId.contains("comments_recycler") ||
+          resId.contains("sharesheet") ||
+          resId.contains("direct_share_sheet")
+        )
       ) {
         if (node.isVisibleToUser) {
           node.getBoundsInScreen(rect)
@@ -650,7 +648,10 @@ object ShortVideoDetector {
 
   private fun isChromeStopword(value: String): Boolean {
     val norm = value.lowercase().trim()
-    return norm in CHROME_STOPWORDS || norm.length <= 1
+    if (norm in CHROME_STOPWORDS || norm.length <= 1) return true
+    // Ignore pure counters like "1.2K", "42", "99+"
+    if (norm.matches(Regex("^[0-9.,]+[kmbt+]?$"))) return true
+    return false
   }
 
   fun extractReelSignature(packageName: String, rootNode: AccessibilityNodeInfo?): ReelSignature {
