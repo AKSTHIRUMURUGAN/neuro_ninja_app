@@ -405,7 +405,7 @@ export default function VoicePacksScreen() {
                   >
                     <Text style={styles.dangerBtnText}>Remove TTS</Text>
                   </TouchableOpacity>
-                ) : (
+                ) : grp.tts.manifestJson || grp.tts.downloadUrl || cdnBase.trim().length > 0 ? (
                   <TouchableOpacity
                     style={styles.primaryBtn}
                     disabled={busyId === grp.tts.id}
@@ -416,6 +416,13 @@ export default function VoicePacksScreen() {
                         ? `TTS ${progressMap[grp.tts.id] ?? 0}%`
                         : `TTS (${formatMb(grp.tts.sizeBytes)})`}
                     </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.secondaryBtn}
+                    onPress={() => handleTestVoice(grp.languageId, grp.displayName)}
+                  >
+                    <Text style={styles.secondaryBtnText}>OS Offline TTS</Text>
                   </TouchableOpacity>
                 )
               ) : null}

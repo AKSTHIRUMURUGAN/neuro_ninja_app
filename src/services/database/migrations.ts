@@ -1600,5 +1600,105 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
     await db.execAsync('PRAGMA user_version = 14');
   }
+
+  if (currentVersion < 15) {
+    console.log('[SQLite] Migrating to v15 (Built-in Real Voice Pack Manifests)...');
+
+    const indicBase = 'https://huggingface.co/NiranjanYadavIN/indicconformer-sherpa-onnx/resolve/main';
+    const whisperBase = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main';
+    const vitsEnBase = 'https://huggingface.co/csukuangfj/vits-vctk/resolve/main';
+
+    const updates: { id: string; size: number; files: { name: string; url: string; size: number }[] }[] = [
+      {
+        id: 'vad-silero-v1',
+        size: 2313101,
+        files: [
+          {
+            name: 'silero_vad.onnx',
+            url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad_v5.onnx',
+            size: 2313101,
+          },
+        ],
+      },
+      {
+        id: 'stt-base-multilingual',
+        size: 103609903,
+        files: [
+          { name: 'tiny-encoder.int8.onnx', url: `${whisperBase}/tiny-encoder.int8.onnx`, size: 12937772 },
+          { name: 'tiny-decoder.int8.onnx', url: `${whisperBase}/tiny-decoder.int8.onnx`, size: 89855401 },
+          { name: 'tokens.txt', url: `${whisperBase}/tiny-tokens.txt`, size: 816730 },
+        ],
+      },
+      {
+        id: 'tts-en-in',
+        size: 42949373,
+        files: [
+          { name: 'vits-vctk.int8.onnx', url: `${vitsEnBase}/vits-vctk.int8.onnx`, size: 39240108 },
+          { name: 'tokens.txt', url: `${vitsEnBase}/tokens.txt`, size: 1084 },
+          { name: 'lexicon.txt', url: `${vitsEnBase}/lexicon.txt`, size: 3708181 },
+        ],
+      },
+      {
+        id: 'stt-en-in',
+        size: 174621490,
+        files: [
+          { name: 'model.int8.onnx', url: `${indicBase}/en/model.int8.onnx`, size: 174610057 },
+          { name: 'tokens.txt', url: `${indicBase}/en/tokens.txt`, size: 11433 },
+        ],
+      },
+      {
+        id: 'stt-ta-in',
+        size: 197610000,
+        files: [
+          { name: 'model.int8.onnx', url: `${indicBase}/ta/model.int8.onnx`, size: 197595513 },
+          { name: 'tokens.txt', url: `${indicBase}/tokens.txt`, size: 14000 },
+        ],
+      },
+      {
+        id: 'stt-hi-in',
+        size: 197610000,
+        files: [
+          { name: 'model.int8.onnx', url: `${indicBase}/hi/model.int8.onnx`, size: 197595593 },
+          { name: 'tokens.txt', url: `${indicBase}/tokens.txt`, size: 14000 },
+        ],
+      },
+      {
+        id: 'stt-te-in',
+        size: 197610000,
+        files: [
+          { name: 'model.int8.onnx', url: `${indicBase}/te/model.int8.onnx`, size: 197595693 },
+          { name: 'tokens.txt', url: `${indicBase}/tokens.txt`, size: 14000 },
+        ],
+      },
+      {
+        id: 'stt-ml-in',
+        size: 197610000,
+        files: [
+          { name: 'model.int8.onnx', url: `${indicBase}/ml/model.int8.onnx`, size: 197595555 },
+          { name: 'tokens.txt', url: `${indicBase}/tokens.txt`, size: 14000 },
+        ],
+      },
+      {
+        id: 'stt-kn-in',
+        size: 197610000,
+        files: [
+          { name: 'model.int8.onnx', url: `${indicBase}/kn/model.int8.onnx`, size: 197595728 },
+          { name: 'tokens.txt', url: `${indicBase}/tokens.txt`, size: 14000 },
+        ],
+      },
+    ];
+
+    for (const u of updates) {
+      await db.runAsync(
+        'UPDATE voice_pack_modules SET size_bytes = ?, manifest_json = ?, updated_at = ? WHERE id = ?',
+        u.size,
+        JSON.stringify(u.files),
+        new Date().toISOString(),
+        u.id
+      );
+    }
+
+    await db.execAsync('PRAGMA user_version = 15');
+  }
 }
 
