@@ -202,6 +202,8 @@ export const DEFAULT_FAMILY_MEMBERS: FamilyMember[] = [
   { id: 'office', name: 'Office / Business', relationship: 'office', avatarEmoji: '💼', color: '#6366F1', isDefault: true },
 ];
 
+export type CaptureSource = 'manual' | 'notification' | 'sms' | 'gmail' | 'voice' | 'ocr';
+
 export interface FinanceTransaction {
   id: string;
   amount: number;
@@ -214,6 +216,12 @@ export interface FinanceTransaction {
   description?: string;
   linkedGoalId?: string;
   tags: string[];
+  source?: CaptureSource;
+  merchantName?: string;
+  utrRef?: string;
+  receiptUrl?: string;
+  confidence?: number;
+  isVerified?: boolean;
   createdAt: string;
   updatedAt: string;
   syncStatus?: 'synced' | 'pending' | 'error';

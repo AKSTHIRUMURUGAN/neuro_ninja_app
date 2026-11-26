@@ -8,6 +8,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useNinjaBack } from '../../../hooks/use-ninja-back';
@@ -45,6 +46,12 @@ import { CategoryBudgetsView } from '../../../components/finance/CategoryBudgets
 import { CategoryManagerModal } from '../../../components/finance/CategoryManagerModal';
 import { MemberManagerModal } from '../../../components/finance/MemberManagerModal';
 import { WealthZenShareModal } from '../../../components/finance/WealthZenShareModal';
+import { VoiceExpenseModal } from '../../../components/finance/VoiceExpenseModal';
+import { ReceiptScannerModal } from '../../../components/finance/ReceiptScannerModal';
+import { AutoCaptureInboxModal } from '../../../components/finance/AutoCaptureInboxModal';
+import { AutoCaptureSettingsModal } from '../../../components/finance/AutoCaptureSettingsModal';
+import { financeIngestionEngine } from '../../../services/finance/finance-ingestion-engine';
+import { drainNotificationsToEngine } from '../../../services/finance/native-finance-bridge';
 
 type FinanceTab =
   | 'ledger'
@@ -99,16 +106,22 @@ export default function NeuroFinanceMasterScreen() {
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
+  const [isInboxModalOpen, setIsInboxModalOpen] = useState(false);
+  const [isSourcesModalOpen, setIsSourcesModalOpen] = useState(false);
+  const [pendingInboxCount, setPendingInboxCount] = useState(0);
 
   const loadAllData = useCallback(async () => {
     try {
-      const [cats, mems, txs, prof, nw, emi] = await Promise.all([
+      const [cats, mems, txs, prof, nw, emi, pending] = await Promise.all([
         getCategories(),
         getFamilyMembers(),
         getTransactionsV2({ limit: 100 }),
         getProfileV2(),
         getNetWorthSummaryV2(),
         getEMISafety(),
+        financeIngestionEngine.getPendingItems(),
       ]);
       setCategories(cats);
       setMembers(mems);
@@ -116,10 +129,34 @@ export default function NeuroFinanceMasterScreen() {
       setCurrencySymbol(prof.currency || '₹');
       setNetWorth(nw);
       setEmiSafety(emi);
+      setPendingInboxCount(pending.length);
     } catch (e) {
       console.warn('[NeuroFinance] Error loading master data:', e);
     }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const syncOnFocus = async () => {
+        const res = await drainNotificationsToEngine();
+        if (!active) return;
+        await loadAllData();
+        if (res.saved > 0 || res.queued > 0) {
+          showToast({
+            title: 'Auto-Finance Synced',
+            message: `${res.saved} auto-logged, ${res.queued} in Review Inbox.`,
+            type: 'success',
+            icon: 'radar',
+          });
+        }
+      };
+      void syncOnFocus();
+      return () => {
+        active = false;
+      };
+    }, [loadAllData, showToast])
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -307,6 +344,59 @@ export default function NeuroFinanceMasterScreen() {
         </View>
       </View>
 
+      {/* Auto-Capture Quick Action Bar */}
+      <View style={styles.captureBar}>
+        <TouchableOpacity
+          style={styles.captureChip}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setIsVoiceModalOpen(true);
+          }}
+        >
+          <MaterialCommunityIcons name="microphone" size={15} color="#38BDF8" />
+          <Text style={styles.captureChipText}>Voice</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.captureChip}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setIsScannerModalOpen(true);
+          }}
+        >
+          <MaterialCommunityIcons name="camera-iris" size={15} color="#00E699" />
+          <Text style={styles.captureChipText}>Scan Bill</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.captureChip, pendingInboxCount > 0 && styles.captureChipAlert]}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setIsInboxModalOpen(true);
+          }}
+        >
+          <MaterialCommunityIcons
+            name="inbox-arrow-down"
+            size={15}
+            color={pendingInboxCount > 0 ? '#F59E0B' : '#94A3B8'}
+          />
+          <Text style={styles.captureChipText}>
+            Inbox{pendingInboxCount > 0 ? ` (${pendingInboxCount})` : ''}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.captureChip}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setIsSourcesModalOpen(true);
+          }}
+        >
+          <MaterialCommunityIcons name="radar" size={15} color="#A78BFA" />
+          <Text style={styles.captureChipText}>Sources</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Tab Switcher Horizontal Bar */}
       <View style={styles.tabBarWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
@@ -392,6 +482,41 @@ export default function NeuroFinanceMasterScreen() {
         netWorth={netWorth}
         emiSafety={emiSafety}
         currencySymbol={currencySymbol}
+      />
+
+      {/* Voice Expense Modal */}
+      <VoiceExpenseModal
+        visible={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        categories={categories}
+        members={members}
+        currencySymbol={currencySymbol}
+        onSaveTransaction={handleAddTransaction}
+      />
+
+      {/* Receipt OCR Scanner Modal */}
+      <ReceiptScannerModal
+        visible={isScannerModalOpen}
+        onClose={() => setIsScannerModalOpen(false)}
+        categories={categories}
+        currencySymbol={currencySymbol}
+        onSaveTransaction={handleAddTransaction}
+      />
+
+      {/* Auto-Capture Review Inbox Modal */}
+      <AutoCaptureInboxModal
+        visible={isInboxModalOpen}
+        onClose={() => setIsInboxModalOpen(false)}
+        categories={categories}
+        currencySymbol={currencySymbol}
+        onChanged={loadAllData}
+      />
+
+      {/* Auto-Capture Sources Settings Modal */}
+      <AutoCaptureSettingsModal
+        visible={isSourcesModalOpen}
+        onClose={() => setIsSourcesModalOpen(false)}
+        onSynced={loadAllData}
       />
     </SafeAreaView>
   );
@@ -493,6 +618,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     marginTop: 2,
+  },
+  captureBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  captureChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#0F1829',
+    borderRadius: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  captureChipAlert: {
+    borderColor: 'rgba(245, 158, 11, 0.5)',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+  },
+  captureChipText: {
+    color: '#E2E8F0',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   tabBarWrapper: {
     borderBottomWidth: 1,

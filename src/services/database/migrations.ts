@@ -1426,5 +1426,101 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
     await db.execAsync('PRAGMA user_version = 11');
   }
+
+  if (currentVersion < 12) {
+    const alterCols = [
+      "ALTER TABLE finance_transactions_v2 ADD COLUMN source TEXT DEFAULT 'manual'",
+      'ALTER TABLE finance_transactions_v2 ADD COLUMN merchant_name TEXT',
+      'ALTER TABLE finance_transactions_v2 ADD COLUMN utr_ref TEXT',
+      'ALTER TABLE finance_transactions_v2 ADD COLUMN confidence REAL DEFAULT 1.0',
+      'ALTER TABLE finance_transactions_v2 ADD COLUMN is_verified INTEGER DEFAULT 1',
+    ];
+    for (const sql of alterCols) {
+      try {
+        await db.execAsync(sql);
+      } catch {
+        // Column may already exist in partial migrations
+      }
+    }
+
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS finance_ingestion_queue (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        raw_hash TEXT NOT NULL UNIQUE,
+        utr_ref TEXT,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL,
+        merchant_raw TEXT,
+        merchant_normalized TEXT,
+        suggested_category TEXT NOT NULL,
+        suggested_group TEXT NOT NULL,
+        suggested_member TEXT NOT NULL DEFAULT 'personal',
+        payment_method TEXT NOT NULL DEFAULT 'upi',
+        account_last4 TEXT,
+        confidence REAL NOT NULL DEFAULT 0.7,
+        status TEXT NOT NULL DEFAULT 'pending_review',
+        linked_tx_id TEXT,
+        receipt_image_uri TEXT,
+        raw_snippet TEXT,
+        detected_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_merchant_rules (
+        id TEXT PRIMARY KEY,
+        pattern TEXT NOT NULL UNIQUE,
+        normalized_name TEXT NOT NULL,
+        category_id TEXT NOT NULL,
+        category_group TEXT NOT NULL,
+        spent_on TEXT NOT NULL DEFAULT 'personal',
+        payment_method TEXT,
+        hit_count INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS finance_sync_sources (
+        source_id TEXT PRIMARY KEY,
+        is_enabled INTEGER NOT NULL DEFAULT 0,
+        last_sync_at TEXT,
+        account_label TEXT,
+        metadata_json TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO finance_sync_sources (source_id, is_enabled, updated_at) VALUES
+      ('notification_listener', 0, datetime('now')),
+      ('sms_backfill', 0, datetime('now')),
+      ('gmail_oauth', 0, datetime('now'));
+
+      INSERT OR IGNORE INTO finance_merchant_rules (id, pattern, normalized_name, category_id, category_group, spent_on, hit_count, updated_at) VALUES
+      ('mr_swiggy', 'swiggy', 'Swiggy', 'Food & Dining', 'personal', 'personal', 10, datetime('now')),
+      ('mr_zomato', 'zomato', 'Zomato', 'Food & Dining', 'personal', 'personal', 10, datetime('now')),
+      ('mr_starbucks', 'starbucks', 'Starbucks', 'Food & Dining', 'personal', 'personal', 10, datetime('now')),
+      ('mr_mcdonalds', 'mcdonald', 'McDonalds', 'Food & Dining', 'personal', 'personal', 10, datetime('now')),
+      ('mr_blinkit', 'blinkit', 'Blinkit', 'Kitchen & Provisions', 'household', 'family', 10, datetime('now')),
+      ('mr_zepto', 'zepto', 'Zepto', 'Kitchen & Provisions', 'household', 'family', 10, datetime('now')),
+      ('mr_bigbasket', 'bigbasket', 'BigBasket', 'Kitchen & Provisions', 'household', 'family', 10, datetime('now')),
+      ('mr_dmart', 'dmart', 'DMart', 'Family Groceries', 'parents', 'family', 10, datetime('now')),
+      ('mr_uber', 'uber', 'Uber', 'Transportation', 'personal', 'personal', 10, datetime('now')),
+      ('mr_ola', 'ola', 'Ola', 'Transportation', 'personal', 'personal', 10, datetime('now')),
+      ('mr_rapido', 'rapido', 'Rapido', 'Transportation', 'personal', 'personal', 10, datetime('now')),
+      ('mr_irctc', 'irctc', 'IRCTC', 'Vacation & Travel', 'other', 'personal', 10, datetime('now')),
+      ('mr_amazon', 'amazon', 'Amazon', 'Shopping', 'personal', 'personal', 10, datetime('now')),
+      ('mr_flipkart', 'flipkart', 'Flipkart', 'Shopping', 'personal', 'personal', 10, datetime('now')),
+      ('mr_myntra', 'myntra', 'Myntra', 'Shopping', 'personal', 'personal', 10, datetime('now')),
+      ('mr_netflix', 'netflix', 'Netflix', 'Digital Subscriptions', 'personal', 'personal', 10, datetime('now')),
+      ('mr_spotify', 'spotify', 'Spotify', 'Digital Subscriptions', 'personal', 'personal', 10, datetime('now')),
+      ('mr_airtel', 'airtel', 'Airtel', 'WiFi & Mobile Recharges', 'household', 'personal', 10, datetime('now')),
+      ('mr_jio', 'jio', 'Jio', 'WiFi & Mobile Recharges', 'household', 'personal', 10, datetime('now')),
+      ('mr_bescom', 'bescom', 'BESCOM Electricity', 'Electricity / Water / Gas', 'household', 'family', 10, datetime('now')),
+      ('mr_apollo', 'apollo', 'Apollo Pharmacy', 'Healthcare', 'personal', 'personal', 10, datetime('now')),
+      ('mr_pharmeasy', 'pharmeasy', 'PharmEasy', 'Family Medical & Medicines', 'parents', 'parents', 10, datetime('now')),
+      ('mr_zerodha', 'zerodha', 'Zerodha', 'Stock Market', 'investments', 'personal', 10, datetime('now')),
+      ('mr_groww', 'groww', 'Groww', 'SIP & Mutual Funds', 'investments', 'personal', 10, datetime('now'));
+    `);
+
+    await db.execAsync('PRAGMA user_version = 12');
+  }
 }
 

@@ -356,6 +356,12 @@ export async function getTransactionsV2(filter?: {
       description: r.description || undefined,
       linkedGoalId: r.linked_goal_id || undefined,
       tags: r.tags_json ? JSON.parse(r.tags_json) : [],
+      source: (r.source as any) || 'manual',
+      merchantName: r.merchant_name || undefined,
+      utrRef: r.utr_ref || undefined,
+      receiptUrl: r.receipt_url || undefined,
+      confidence: r.confidence !== null && r.confidence !== undefined ? Number(r.confidence) : 1.0,
+      isVerified: r.is_verified === undefined || r.is_verified === null ? true : r.is_verified === 1,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       syncStatus: (r.sync_status as 'synced' | 'pending' | 'error') || 'synced',
@@ -381,15 +387,21 @@ export async function saveTransactionV2(t: Partial<FinanceTransaction>): Promise
   const linkedGoalId = t.linkedGoalId || null;
   const tagsJson = JSON.stringify(t.tags || []);
   const isRecurring = 0;
-  const receiptUrl = null;
+  const receiptUrl = t.receiptUrl || null;
+  const source = t.source || 'manual';
+  const merchantName = t.merchantName || null;
+  const utrRef = t.utrRef || null;
+  const confidence = t.confidence ?? 1.0;
+  const isVerified = t.isVerified === false ? 0 : 1;
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO finance_transactions_v2 (
          id, amount, type, category, category_group, spent_on, payment_method,
          date, description, linked_goal_id, tags_json, is_recurring, receipt_url,
+         source, merchant_name, utr_ref, confidence, is_verified,
          created_at, updated_at, sync_status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
        ON CONFLICT(id) DO UPDATE SET
          amount = excluded.amount,
          type = excluded.type,
@@ -401,6 +413,12 @@ export async function saveTransactionV2(t: Partial<FinanceTransaction>): Promise
          description = excluded.description,
          linked_goal_id = excluded.linked_goal_id,
          tags_json = excluded.tags_json,
+         receipt_url = COALESCE(excluded.receipt_url, finance_transactions_v2.receipt_url),
+         source = excluded.source,
+         merchant_name = COALESCE(excluded.merchant_name, finance_transactions_v2.merchant_name),
+         utr_ref = COALESCE(excluded.utr_ref, finance_transactions_v2.utr_ref),
+         confidence = excluded.confidence,
+         is_verified = excluded.is_verified,
          updated_at = excluded.updated_at,
          sync_status = 'pending'`,
       id,
@@ -416,6 +434,11 @@ export async function saveTransactionV2(t: Partial<FinanceTransaction>): Promise
       tagsJson,
       isRecurring,
       receiptUrl,
+      source,
+      merchantName,
+      utrRef,
+      confidence,
+      isVerified,
       t.createdAt || now,
       now
     );
