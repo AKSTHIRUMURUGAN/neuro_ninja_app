@@ -12,10 +12,10 @@ class ReelTrackerEngine(
 ) {
   companion object {
     private const val TAG = "ReelTrackerEngine"
-    private const val MIN_DWELL_MS = 1200L
-    private const val REEL_COMMIT_DEBOUNCE_MS = 1000L
-    private const val SCROLL_DEBOUNCE_MS = 600L
-    private const val MODAL_RESUME_COOLDOWN_MS = 1000L
+    private const val MIN_DWELL_MS = 1000L
+    private const val REEL_COMMIT_DEBOUNCE_MS = 800L
+    private const val SCROLL_DEBOUNCE_MS = 500L
+    private const val MODAL_RESUME_COOLDOWN_MS = 900L
     private const val LRU_CACHE_SIZE = 12
   }
 

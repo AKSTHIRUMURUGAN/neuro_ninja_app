@@ -161,18 +161,16 @@ class NinjaAccessibilityService : AccessibilityService() {
     when (event.eventType) {
       AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
         val source = try { event.source } catch (_: Exception) { null }
+        val eventClass = event.className?.toString() ?: ""
         val root = try { rootInActiveWindow } catch (_: Exception) { null }
-        val isShortScroll = ShortVideoDetector.isValidShortVideoScroll(pkg, source, root)
+        val isShortScroll = ShortVideoDetector.isValidShortVideoScroll(pkg, source, eventClass, root)
         ShortVideoDetector.recycleNode(source)
 
         if (isShortScroll) {
           reelTrackerEngine?.onPhysicalScroll(pkg)
           reelDetectionWorker?.scheduleInspect(pkg)
-        } else {
-          val isModal = ShortVideoDetector.isModalOrDrawerOpen(pkg, root)
-          if (isModal) {
-            reelTrackerEngine?.onModalOpened(pkg)
-          }
+        } else if (ShortVideoDetector.isFastModalActive(pkg, root)) {
+          reelTrackerEngine?.onModalOpened(pkg)
         }
         ShortVideoDetector.recycleNode(root)
       }

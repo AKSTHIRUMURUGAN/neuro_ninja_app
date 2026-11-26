@@ -20,28 +20,24 @@ data class ReelSignature(
   fun isDifferentFrom(other: ReelSignature?): Boolean {
     if (other == null) return true
 
-    // Check 1: Author delta (highest confidence signal)
     if (author.isNotBlank() && other.author.isNotBlank() &&
       !author.equals(other.author, ignoreCase = true)
     ) {
       return true
     }
 
-    // Check 2: Caption delta (detects consecutive reels from same creator)
     if (captionPrefix.isNotBlank() && other.captionPrefix.isNotBlank() &&
       !captionPrefix.equals(other.captionPrefix, ignoreCase = true)
     ) {
       return true
     }
 
-    // Check 3: Audio or attribution tag delta
     if (audioOrDesc.isNotBlank() && other.audioOrDesc.isNotBlank() &&
       !audioOrDesc.equals(other.audioOrDesc, ignoreCase = true)
     ) {
       return true
     }
 
-    // Check 4: Container / Viewport Key delta (only when both lack author & caption)
     if (author.isBlank() && other.author.isBlank() &&
       captionPrefix.isBlank() && other.captionPrefix.isBlank() &&
       containerKey.isNotBlank() && other.containerKey.isNotBlank() &&
@@ -50,7 +46,6 @@ data class ReelSignature(
       return true
     }
 
-    // Check 5: Transition between text-bearing and non-text reels
     if ((author.isNotBlank() && other.author.isBlank()) || (author.isBlank() && other.author.isNotBlank())) {
       return true
     }
@@ -140,26 +135,24 @@ object ShortVideoDetector {
     "stories_tray"
   )
 
-  val INSTAGRAM_MODAL_INDICATORS = listOf(
+  // Explicit list/sheet containers inside Instagram Comments or Share sheets
+  private val INSTAGRAM_MODAL_LIST_IDS = listOf(
     "comments_recycler_view",
     "layout_comment_thread",
-    "comment_composer",
-    "comment_composer_view",
-    "comment_composer_edit_text",
-    "comment_sheet",
     "comment_rows",
-    "action_bar_title_comment",
-    "row_comment",
     "comments_list",
-    "comment_input_row",
+    "sharesheet_recycler_view",
+    "direct_share_sheet",
+    "likes_list_recycler_view"
+  )
+
+  private val INSTAGRAM_MODAL_SHEET_IDS = listOf(
     "bottom_sheet_container",
     "igds_bottom_sheet_layout",
     "igds_bottom_sheet",
     "modal_sheet",
-    "direct_share_sheet",
-    "sharesheet_recycler_view",
     "share_sheet_container",
-    "likes_list_recycler_view"
+    "comment_sheet"
   )
 
   private val YOUTUBE_SHORTS_DIRECT_IDS = listOf(
@@ -177,13 +170,22 @@ object ShortVideoDetector {
     "reel_watch_fragment"
   )
 
-  private val YOUTUBE_MODAL_INDICATORS = listOf(
+  private val YOUTUBE_AUTHOR_IDS = listOf(
+    "channel_name",
+    "reel_channel_name"
+  )
+
+  private val YOUTUBE_CAPTION_IDS = listOf(
+    "video_title",
+    "reel_main_title"
+  )
+
+  // NOTE: Do NOT include comments_entry_point_teaser_container (it is pinned on closed Shorts!)
+  private val YOUTUBE_MODAL_SHEET_IDS = listOf(
     "engagement_panel_wrapper",
     "engagement_panel",
     "modern_bottom_sheet_container",
     "bottom_sheet_container",
-    "comment_composer",
-    "comments_entry_point_teaser_container",
     "share_sheet_container"
   )
 
@@ -208,66 +210,153 @@ object ShortVideoDetector {
     "memories_grid"
   )
 
-  private val MODAL_SEMANTIC_KEYWORDS = listOf(
-    "add a comment",
-    "add comment",
-    "write a comment",
+  // Strong multi-signal modal cues (never single player buttons like "Send to" or "Add a comment")
+  private val STRONG_COMMENT_SHEET_CUES = setOf(
     "no comments yet",
-    "view replies",
-    "send to",
-    "add to story",
-    "copy link",
-    "send in messenger",
     "top comments",
     "newest first",
+    "view replies",
+    "comments"
+  )
+
+  private val STRONG_SHARE_SHEET_CUES = setOf(
+    "copy link",
+    "add to story",
+    "send in messenger",
     "share to"
+  )
+
+  private val CHROME_STOPWORDS = setOf(
+    "shorts",
+    "reels",
+    "follow",
+    "following",
+    "subscribe",
+    "subscribed",
+    "like",
+    "dislike",
+    "comment",
+    "comments",
+    "share",
+    "send to",
+    "remix",
+    "sound",
+    "original audio",
+    "home",
+    "subscriptions",
+    "you",
+    "library",
+    "search",
+    "interested",
+    "not interested"
   )
 
   fun isInstagramCommentSheetActive(rootNode: AccessibilityNodeInfo?): Boolean =
     isModalOrDrawerOpen("com.instagram.android", rootNode)
 
+  private fun hasLargeVisibleViewId(
+    root: AccessibilityNodeInfo?,
+    packageName: String,
+    viewIds: List<String>,
+    minHeightRatio: Float
+  ): Boolean {
+    if (root == null) return false
+    val minHeight = (screenHeight * minHeightRatio).toInt()
+    val rect = Rect()
+    for (id in viewIds) {
+      val found = root.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
+      if (!found.isNullOrEmpty()) {
+        for (node in found) {
+          if (node.isVisibleToUser) {
+            node.getBoundsInScreen(rect)
+            if (rect.height() >= minHeight) {
+              recycleNodes(found)
+              return true
+            }
+          }
+        }
+        recycleNodes(found)
+      }
+    }
+    return false
+  }
+
+  /**
+   * Fast O(1)-ish view-ID + geometric check safe for main-thread TYPE_VIEW_SCROLLED.
+   */
+  fun isFastModalActive(packageName: String, rootNode: AccessibilityNodeInfo?): Boolean {
+    if (rootNode == null) return false
+    return when {
+      packageName.contains("instagram") -> {
+        hasLargeVisibleViewId(rootNode, packageName, INSTAGRAM_MODAL_LIST_IDS, 0.20f) ||
+          hasLargeVisibleViewId(rootNode, packageName, INSTAGRAM_MODAL_SHEET_IDS, 0.28f)
+      }
+      packageName.contains("youtube") -> {
+        hasLargeVisibleViewId(rootNode, packageName, YOUTUBE_MODAL_SHEET_IDS, 0.28f)
+      }
+      else -> false
+    }
+  }
+
   /**
    * Unified Modal / Bottom-Sheet / Comments / Share-Sheet Suppression (Mindful & NoScroll parity).
-   * When true, all scroll events are ignored and the tracker enters PAUSED_MODAL state.
+   * Requires geometric sheet bounds (>= 28% screen height) OR 2+ simultaneous modal cues
+   * so normal Reels/Shorts player buttons ("Send to", comment teaser) NEVER false-trigger.
    */
   fun isModalOrDrawerOpen(packageName: String, rootNode: AccessibilityNodeInfo?): Boolean {
     if (rootNode == null) return false
+    if (isFastModalActive(packageName, rootNode)) return true
 
-    when {
-      packageName.contains("instagram") -> {
-        if (hasAnyDirectViewId(rootNode, packageName, INSTAGRAM_MODAL_INDICATORS)) return true
-      }
-      packageName.contains("youtube") -> {
-        if (hasAnyDirectViewId(rootNode, packageName, YOUTUBE_MODAL_INDICATORS)) return true
-      }
-    }
+    val rect = Rect()
+    val minSheetHeight = (screenHeight * 0.28f).toInt()
+    var hasLargeSheetId = false
+    var commentCueCount = 0
+    var shareCueCount = 0
+    var hasCommentInput = false
+    val seenCues = HashSet<String>()
 
-    // Bounded semantic scan (depth <= 14) catches Jetpack Compose / Meta Bloks bottom sheets
-    var foundModalText = false
     fun scanModalMarkers(node: AccessibilityNodeInfo?, depth: Int) {
-      if (node == null || depth > MODAL_SCAN_DEPTH || foundModalText) return
+      if (node == null || depth > MODAL_SCAN_DEPTH || hasLargeSheetId) return
       val resId = node.viewIdResourceName?.lowercase() ?: ""
       if (resId.contains("bottom_sheet") ||
         resId.contains("engagement_panel") ||
-        resId.contains("comment_composer") ||
         resId.contains("comments_recycler") ||
         resId.contains("sharesheet") ||
         resId.contains("direct_share_sheet")
       ) {
         if (node.isVisibleToUser) {
-          foundModalText = true
-          return
+          node.getBoundsInScreen(rect)
+          if (rect.height() >= minSheetHeight) {
+            hasLargeSheetId = true
+            return
+          }
         }
       }
 
       val text = node.text?.toString()?.lowercase()?.trim() ?: ""
       val desc = node.contentDescription?.toString()?.lowercase()?.trim() ?: ""
-      if (text.isNotEmpty() && MODAL_SEMANTIC_KEYWORDS.any { text.contains(it) }) {
-        foundModalText = true
-        return
+      val combined = if (text.isNotEmpty()) text else desc
+
+      if (combined.isNotEmpty() && node.isVisibleToUser) {
+        if (combined.contains("add a comment") || combined.contains("add comment") || combined.contains("write a comment")) {
+          hasCommentInput = true
+        }
+        for (cue in STRONG_COMMENT_SHEET_CUES) {
+          if ((combined == cue || combined.startsWith(cue)) && seenCues.add("c:$cue")) {
+            commentCueCount++
+          }
+        }
+        for (cue in STRONG_SHARE_SHEET_CUES) {
+          if (combined.contains(cue) && seenCues.add("s:$cue")) {
+            shareCueCount++
+          }
+        }
+        if (combined == "send to" && seenCues.add("s:send_to")) {
+          shareCueCount++
+        }
       }
-      if (desc.isNotEmpty() && MODAL_SEMANTIC_KEYWORDS.any { desc.contains(it) }) {
-        foundModalText = true
+
+      if (commentCueCount >= 2 || (hasCommentInput && commentCueCount >= 1) || shareCueCount >= 2) {
         return
       }
 
@@ -275,12 +364,17 @@ object ShortVideoDetector {
         val child = node.getChild(i) ?: continue
         scanModalMarkers(child, depth + 1)
         recycleNode(child)
-        if (foundModalText) return
+        if (hasLargeSheetId || commentCueCount >= 2 || (hasCommentInput && commentCueCount >= 1) || shareCueCount >= 2) {
+          return
+        }
       }
     }
 
     scanModalMarkers(rootNode, 0)
-    return foundModalText
+    return hasLargeSheetId ||
+      commentCueCount >= 2 ||
+      (hasCommentInput && commentCueCount >= 1) ||
+      shareCueCount >= 2
   }
 
   fun recycleNode(node: AccessibilityNodeInfo?) {
@@ -333,9 +427,6 @@ object ShortVideoDetector {
       hasAnyDirectViewId(rootNode, packageName, INSTAGRAM_AUDIO_IDS)
   }
 
-  /**
-   * Strict Snapchat Spotlight check: rejects Chat, Inbox, Stories, Camera, Map, and Discover.
-   */
   private fun isSnapchatSpotlightActive(rootNode: AccessibilityNodeInfo?, packageName: String): Boolean {
     if (rootNode == null) return false
     if (hasAnyDirectViewId(rootNode, packageName, SNAPCHAT_SAFE_INDICATORS)) return false
@@ -377,9 +468,6 @@ object ShortVideoDetector {
     return hasSpotlightSignal && !hasChatOrSafeUi
   }
 
-  /**
-   * Strict Facebook Reels check: rejects News Feed, Messenger, Marketplace, Groups, and Comments.
-   */
   private fun isFacebookReelsActive(rootNode: AccessibilityNodeInfo?, packageName: String): Boolean {
     if (rootNode == null) return false
     var hasReelsSignal = false
@@ -409,48 +497,51 @@ object ShortVideoDetector {
   }
 
   /**
-   * Validates whether a physical scroll event originated from an actual full-screen short-video pager
-   * (never from comments, share sheets, DMs, or chat lists).
+   * Validates physical scroll gestures on the main thread without expensive deep scans.
+   * Supports Compose, Litho ComponentHost, and ViewPager2 inner RecyclerViews.
    */
   fun isValidShortVideoScroll(
     packageName: String,
     sourceNode: AccessibilityNodeInfo?,
+    eventClassName: String,
     rootNode: AccessibilityNodeInfo?
   ): Boolean {
-    if (isModalOrDrawerOpen(packageName, rootNode) || isExplicitSafeSurface(packageName, rootNode)) {
+    if (isFastModalActive(packageName, rootNode) || isExplicitSafeSurface(packageName, rootNode)) {
       return false
     }
 
     val sourceId = sourceNode?.viewIdResourceName?.lowercase() ?: ""
-    val sourceClass = sourceNode?.className?.toString()?.lowercase() ?: ""
+    val sourceClass = (sourceNode?.className?.toString() ?: eventClassName).lowercase()
+
+    if (sourceId.contains("direct") || sourceId.contains("thread") ||
+      sourceId.contains("message") || sourceId.contains("inbox") ||
+      sourceId.contains("row_feed") || sourceId.contains("composer") ||
+      sourceId.contains("comment") || sourceId.contains("share") ||
+      sourceId.contains("time_bar")
+    ) {
+      return false
+    }
 
     if (sourceNode != null) {
       val rect = Rect()
       sourceNode.getBoundsInScreen(rect)
-      // Bottom sheets, comment lists, and story trays are smaller than the full-screen video pager
-      if (rect.height() in 1 until (screenHeight * 0.55f).toInt()) {
+      if (rect.height() in 1 until (screenHeight * 0.45f).toInt()) {
         return false
       }
     }
 
     return when {
       packageName.contains("youtube") -> {
-        (sourceId.contains("reel_recycler") || sourceId.contains("shorts_recycler") ||
-          (sourceId.contains("reel") && !sourceId.contains("time_bar"))) &&
-          hasActiveShortsViewport(rootNode, packageName)
+        hasActiveShortsViewport(rootNode, packageName) &&
+          (sourceId.contains("reel") || sourceId.contains("shorts") ||
+            sourceClass.contains("recyclerview") || sourceClass.contains("viewpager"))
       }
       packageName.contains("instagram") -> {
-        if (sourceId.contains("direct") || sourceId.contains("thread") ||
-          sourceId.contains("message") || sourceId.contains("inbox") ||
-          sourceId.contains("row_feed") || sourceId.contains("composer") ||
-          sourceId.contains("comment") || sourceId.contains("share")
-        ) {
-          false
-        } else {
-          hasInstagramReelIndicators(rootNode, packageName) &&
-            (sourceId.contains("clips") || sourceId.contains("reel") ||
-              sourceClass.contains("viewpager") || sourceClass.contains("recyclerview"))
-        }
+        val isReelsActive = activeShortVideoPackage == packageName ||
+          hasInstagramReelIndicators(rootNode, packageName)
+        isReelsActive && (sourceId.contains("clips") || sourceId.contains("reel") ||
+          sourceClass.contains("viewpager") || sourceClass.contains("recyclerview") ||
+          sourceClass.contains("compose") || sourceClass.contains("componenthost"))
       }
       packageName.contains("zhiliaoapp.musically") || packageName.contains("tiktok") -> true
       packageName.contains("snapchat") -> isSnapchatSpotlightActive(rootNode, packageName)
@@ -539,7 +630,7 @@ object ShortVideoDetector {
   fun hasActiveShortsViewport(rootNode: AccessibilityNodeInfo?, packageName: String): Boolean {
     if (rootNode == null) return false
     val tempRect = Rect()
-    for (id in listOf("reel_recycler", "reel_watch_fragment_root", "reel_player_page_container", "shorts_container")) {
+    for (id in YOUTUBE_SHORTS_DIRECT_IDS.take(4)) {
       val nodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
       if (!nodes.isNullOrEmpty()) {
         for (node in nodes) {
@@ -555,6 +646,11 @@ object ShortVideoDetector {
       }
     }
     return false
+  }
+
+  private fun isChromeStopword(value: String): Boolean {
+    val norm = value.lowercase().trim()
+    return norm in CHROME_STOPWORDS || norm.length <= 1
   }
 
   fun extractReelSignature(packageName: String, rootNode: AccessibilityNodeInfo?): ReelSignature {
@@ -574,7 +670,7 @@ object ShortVideoDetector {
             val text = centerNode?.text?.toString()?.trim() ?: ""
             val desc = centerNode?.contentDescription?.toString()?.trim() ?: ""
             recycleNodes(nodes)
-            if (text.isNotBlank() && text.length in 2..40) {
+            if (text.isNotBlank() && text.length in 2..40 && !isChromeStopword(text)) {
               author = text
               break
             } else if (desc.startsWith("Profile picture of ", ignoreCase = true)) {
@@ -593,7 +689,7 @@ object ShortVideoDetector {
             val (centerNode, _) = selectCenterViewportNode(nodes)
             val text = centerNode?.text?.toString()?.trim() ?: ""
             recycleNodes(nodes)
-            if (text.isNotBlank()) {
+            if (text.isNotBlank() && !isChromeStopword(text)) {
               caption = text
               break
             }
@@ -606,7 +702,7 @@ object ShortVideoDetector {
             val (centerNode, _) = selectCenterViewportNode(nodes)
             val text = centerNode?.text?.toString()?.trim() ?: ""
             recycleNodes(nodes)
-            if (text.isNotBlank()) {
+            if (text.isNotBlank() && !isChromeStopword(text)) {
               audioOrDesc = text
               break
             }
@@ -627,6 +723,32 @@ object ShortVideoDetector {
       }
 
       packageName.contains("youtube") -> {
+        for (id in YOUTUBE_AUTHOR_IDS) {
+          val nodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
+          if (!nodes.isNullOrEmpty()) {
+            val (centerNode, _) = selectCenterViewportNode(nodes)
+            val text = centerNode?.text?.toString()?.trim() ?: ""
+            recycleNodes(nodes)
+            if (text.isNotBlank() && !isChromeStopword(text)) {
+              author = text
+              break
+            }
+          }
+        }
+
+        for (id in YOUTUBE_CAPTION_IDS) {
+          val nodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
+          if (!nodes.isNullOrEmpty()) {
+            val (centerNode, _) = selectCenterViewportNode(nodes)
+            val text = centerNode?.text?.toString()?.trim() ?: ""
+            recycleNodes(nodes)
+            if (text.isNotBlank() && !isChromeStopword(text)) {
+              caption = text
+              break
+            }
+          }
+        }
+
         for (id in listOf("reel_watch_fragment_root", "reel_recycler", "reel_player_page_container")) {
           val nodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
           if (!nodes.isNullOrEmpty()) {
@@ -674,7 +796,7 @@ object ShortVideoDetector {
         }
       }
 
-      if (text.isNotBlank()) {
+      if (text.isNotBlank() && !isChromeStopword(text)) {
         foundTextList.add(text)
         if (text.equals("Follow", ignoreCase = true) || text.equals("Following", ignoreCase = true) ||
           text.equals("Subscribe", ignoreCase = true) || text.equals("Subscribed", ignoreCase = true)
@@ -682,7 +804,7 @@ object ShortVideoDetector {
           followFound = true
         } else if (author.isBlank() && (text.startsWith("@") || ((followFound || text.contains(".")) && text.length in 3..30 && !text.contains(" ") && !text.contains(":") && !text.contains("•")))) {
           author = text
-        } else if (caption.isBlank() && text.length > 8 && !text.equals("Interested", ignoreCase = true) && !text.equals("Not interested", ignoreCase = true)) {
+        } else if (caption.isBlank() && text.length > 8) {
           caption = text
         }
       }
@@ -698,7 +820,7 @@ object ShortVideoDetector {
 
     if (author.isBlank() && foundTextList.isNotEmpty()) {
       for (t in foundTextList) {
-        if (t.length in 3..25 && !t.contains(" ") && !t.contains("Like") && !t.contains("Comment")) {
+        if (t.length in 3..25 && !t.contains(" ") && !isChromeStopword(t)) {
           author = t
           break
         }
@@ -707,14 +829,13 @@ object ShortVideoDetector {
 
     if (caption.isBlank() && foundTextList.size > 1) {
       for (t in foundTextList) {
-        if (t != author && t.length > 8 && !t.contains("Follow") && !t.contains("Translate")) {
+        if (t != author && t.length > 8 && !isChromeStopword(t) && !t.contains("Translate")) {
           caption = t
           break
         }
       }
     }
 
-    // Build stable composite key WITHOUT volatile like/comment counters
     val compositeKey = when {
       author.isNotBlank() || caption.isNotBlank() -> "Hash_${(author + "|" + caption.take(24)).hashCode()}"
       containerKey.isNotBlank() -> containerKey
