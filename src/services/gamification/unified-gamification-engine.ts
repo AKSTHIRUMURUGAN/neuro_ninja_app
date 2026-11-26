@@ -186,22 +186,28 @@ class UnifiedGamificationEngine {
       }
     }
 
-    // 2. Damage Weekly Clan Titan
+    // 2. Damage Weekly Clan Titan (with Phase Modifiers)
     if (weekly && weekly.status === 'active') {
-      const nextHp = Math.max(0, weekly.currentHp - finalDamage);
+      const { getWeeklyTitanPhase, getPhaseModifier } = await import('../villains/villain-engine');
+      const currentPhase = getWeeklyTitanPhase(weekly.currentHp, weekly.maxHp);
+      const phaseMod = getPhaseModifier(currentPhase, source);
+      const titanDamage = Math.round(finalDamage * phaseMod.multiplier);
+
+      const nextHp = Math.max(0, weekly.currentHp - titanDamage);
       weeklyRemaining = nextHp;
       const isDefeated = nextHp === 0;
+      const nextPhase = getWeeklyTitanPhase(nextHp, weekly.maxHp);
 
       await db.runAsync(
-        'UPDATE weekly_villains SET current_hp = ?, status = ? WHERE id = ?',
-        [nextHp, isDefeated ? 'defeated' : 'active', weekly.id]
+        'UPDATE weekly_villains SET current_hp = ?, phase = ?, status = ? WHERE id = ?',
+        [nextHp, nextPhase, isDefeated ? 'defeated' : 'active', weekly.id]
       );
 
       // Record Clan contribution
       await db.runAsync(
         `INSERT INTO clan_raid_contributions (id, week_id, friend_id, damage_dealt, action_summary, contributed_at)
          VALUES (?, ?, 'current_player', ?, ?, ?)`,
-        [generateUuid('contrib'), weekly.weekId, finalDamage, actionName, now]
+        [generateUuid('contrib'), weekly.weekId, titanDamage, actionName, now]
       );
 
       if (isDefeated) {
@@ -238,14 +244,36 @@ class UnifiedGamificationEngine {
       requiredXp = newLevel * 500;
     }
 
+    const nextBelt =
+      newLevel >= 15
+        ? 'Black Belt'
+        : newLevel >= 11
+        ? 'Brown Belt'
+        : newLevel >= 9
+        ? 'Purple Belt'
+        : newLevel >= 7
+        ? 'Blue Belt'
+        : newLevel >= 5
+        ? 'Green Belt'
+        : newLevel >= 3
+        ? 'Orange Belt'
+        : newLevel >= 2
+        ? 'Yellow Belt'
+        : 'White Belt';
+
     const nextStone = player.castleStone + castleStoneEarned;
 
     await db.runAsync(
       `UPDATE player_rpg_state
-       SET current_xp = ?, player_level = ?, castle_stone = ?, updated_at = ?
+       SET current_xp = ?, player_level = ?, ninja_belt = ?, castle_stone = ?, updated_at = ?
        WHERE id = 'current_player'`,
-      [remainingXp, newLevel, nextStone, now]
+      [remainingXp, newLevel, nextBelt, nextStone, now]
     );
+
+    if (leveledUp && !awardedChest) {
+      const tier = newLevel >= 10 ? 'mythic' : newLevel >= 5 ? 'shadow' : newLevel >= 3 ? 'jade' : 'bamboo';
+      awardedChest = await this.awardChest(tier, `Level Up Milestone: Level ${newLevel}!`);
+    }
 
     // 5. Log Combat History
     const logDesc = `${actionName} struck for ${finalDamage} damage! (${player.equippedWeapon.name})`;
@@ -320,6 +348,15 @@ class UnifiedGamificationEngine {
       ) VALUES (?, 'active_threat', 'daily', 'breach_penalty', 0, ?, ?, ?)`,
       [generateUuid('cbt_breach'), baseCounter, logText, now]
     );
+
+    try {
+      const { gameAudio } = await import('../audio/game-audio-engine');
+      if (nextGate === 0 || nextGate < player.sentryGateMax * 0.5) {
+        void gameAudio.playGateCrumble();
+      } else {
+        void gameAudio.playGateImpact();
+      }
+    } catch {}
 
     return {
       counterDamage: baseCounter,

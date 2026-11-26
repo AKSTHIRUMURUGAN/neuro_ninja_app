@@ -12,8 +12,11 @@ import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-ico
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { villainEngine } from '../../../services/villains/villain-engine';
+import { unifiedGamificationEngine } from '../../../services/gamification/unified-gamification-engine';
 import { gameAudio } from '../../../services/audio/game-audio-engine';
 import { BattleArenaView } from '../../../components/gamification/BattleArenaView';
+import { LevelUpCelebrationModal } from '../../../components/gamification/LevelUpCelebrationModal';
+import type { PlayerChest } from '../../../services/gamification/gamification-types';
 import { useNinjaBack } from '../../../hooks/use-ninja-back';
 import type {
   DailyVillain,
@@ -34,6 +37,12 @@ export default function VillainsScreen() {
   const [player, setPlayer] = useState<PlayerRpgProfile | null>(null);
   const [logs, setLogs] = useState<CombatLog[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [levelUpData, setLevelUpData] = useState<{
+    visible: boolean;
+    newLevel: number;
+    ninjaBelt: string;
+    chestAwarded?: PlayerChest;
+  }>({ visible: false, newLevel: 1, ninjaBelt: 'White Belt' });
 
   const loadVillainData = useCallback(async () => {
     try {
@@ -68,10 +77,23 @@ export default function VillainsScreen() {
   const handleDirectAttack = async (damage: number, isCrit: boolean) => {
     try {
       const baseDmg = Math.max(1, Math.round(damage / (player?.equippedWeapon.multiplier || 1)));
-      const res = await villainEngine.dealDamage('pomodoro', baseDmg, isCrit ? 'Shinobi Critical Slash' : 'Shinobi Katana Strike');
+      const res = await unifiedGamificationEngine.dealActionDamage(
+        'pomodoro',
+        baseDmg,
+        isCrit ? 'Shinobi Critical Slash' : 'Shinobi Katana Strike'
+      );
       if (res.dailyDefeated || res.weeklyDefeated) {
         void gameAudio.playBossDeath();
         void gameAudio.playFanfare();
+      }
+      if (res.leveledUp && res.newLevel) {
+        const updatedRpg = await unifiedGamificationEngine.getPlayerRpgState();
+        setLevelUpData({
+          visible: true,
+          newLevel: res.newLevel,
+          ninjaBelt: updatedRpg.ninjaBelt,
+          chestAwarded: res.chestAwarded,
+        });
       }
       await loadVillainData();
     } catch (e) {
@@ -508,6 +530,14 @@ export default function VillainsScreen() {
           </View>
         )}
       </ScrollView>
+
+      <LevelUpCelebrationModal
+        visible={levelUpData.visible}
+        newLevel={levelUpData.newLevel}
+        ninjaBelt={levelUpData.ninjaBelt}
+        chestAwarded={levelUpData.chestAwarded}
+        onClose={() => setLevelUpData((prev) => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 }

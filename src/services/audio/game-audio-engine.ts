@@ -26,6 +26,14 @@ class GameAudioEngine {
     if (!this.isInitialized) {
       try {
         await setAudioModeAsync({ playsInSilentMode: false });
+        const { getDatabase } = await import('../database/database');
+        const db = await getDatabase();
+        const row = await db.getFirstAsync<{ value_json: string }>(
+          "SELECT value_json FROM lifeos_state WHERE key = 'game_audio_muted'"
+        );
+        if (row) {
+          this.isMuted = row.value_json === 'true';
+        }
         this.isInitialized = true;
       } catch (e) {
         console.warn('[GameAudioEngine] Init error:', e);
@@ -35,6 +43,16 @@ class GameAudioEngine {
 
   setMuted(muted: boolean) {
     this.isMuted = muted;
+    void (async () => {
+      try {
+        const { getDatabase } = await import('../database/database');
+        const db = await getDatabase();
+        await db.runAsync(
+          "INSERT OR REPLACE INTO lifeos_state (key, value_json, updated_at) VALUES ('game_audio_muted', ?, ?)",
+          [muted ? 'true' : 'false', new Date().toISOString()]
+        );
+      } catch {}
+    })();
   }
 
   getMuted(): boolean {

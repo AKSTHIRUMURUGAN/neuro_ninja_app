@@ -17,9 +17,11 @@ import { useNinjaBack } from '../../../hooks/use-ninja-back';
 import { useNinjaAlert } from '../../../context/ninja-alert-context';
 import { unifiedGamificationEngine } from '../../../services/gamification/unified-gamification-engine';
 import { villainEngine } from '../../../services/villains/villain-engine';
+import { FriendCastleDuelModal } from '../../../components/gamification/FriendCastleDuelModal';
 import type {
   NinjaFriend,
   ClanRaidContribution,
+  PlayerRpgState,
 } from '../../../services/gamification/gamification-types';
 import type { WeeklyVillain } from '../../../services/villains/villain-types';
 
@@ -31,20 +33,25 @@ export default function FriendsClanScreen() {
   const [friends, setFriends] = useState<NinjaFriend[]>([]);
   const [contributions, setContributions] = useState<ClanRaidContribution[]>([]);
   const [weeklyTitan, setWeeklyTitan] = useState<WeeklyVillain | null>(null);
+  const [playerState, setPlayerState] = useState<PlayerRpgState | null>(null);
+  const [selectedDuelFriend, setSelectedDuelFriend] = useState<NinjaFriend | null>(null);
+  const [showDuelModal, setShowDuelModal] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [friendTagInput, setFriendTagInput] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'clan' | 'raid' | 'buddies'>('clan');
 
   const loadData = useCallback(async () => {
     try {
-      const [f, c, w] = await Promise.all([
+      const [f, c, w, p] = await Promise.all([
         unifiedGamificationEngine.getFriends(),
         unifiedGamificationEngine.getClanRaidContributions(),
         villainEngine.getActiveWeeklyVillain(),
+        unifiedGamificationEngine.getPlayerRpgState(),
       ]);
       setFriends(f);
       setContributions(c);
       setWeeklyTitan(w);
+      setPlayerState(p);
     } catch (e) {
       console.warn('[FriendsClanScreen] load error:', e);
     }
@@ -198,14 +205,29 @@ export default function FriendsClanScreen() {
                   </Text>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.smokeBtn}
-                  onPress={() => handleSendSmokeBomb(f)}
-                  activeOpacity={0.8}
-                >
-                  <MaterialCommunityIcons name="fire" size={16} color="#F59E0B" />
-                  <Text style={styles.smokeBtnText}>RESCUE</Text>
-                </TouchableOpacity>
+                <View style={styles.friendActionsCol}>
+                  <TouchableOpacity
+                    style={styles.duelBtn}
+                    onPress={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      setSelectedDuelFriend(f);
+                      setShowDuelModal(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons name="sword-cross" size={14} color="#070A11" />
+                    <Text style={styles.duelBtnText}>DUEL</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.smokeBtn}
+                    onPress={() => handleSendSmokeBomb(f)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons name="fire" size={14} color="#F59E0B" />
+                    <Text style={styles.smokeBtnText}>RESCUE</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </View>
@@ -264,6 +286,16 @@ export default function FriendsClanScreen() {
           </View>
         )}
       </ScrollView>
+
+      <FriendCastleDuelModal
+        visible={showDuelModal}
+        friend={selectedDuelFriend}
+        attackerLevel={playerState?.playerLevel || 1}
+        weaponMultiplier={playerState?.equippedWeapon.multiplier || 1.2}
+        weaponName={playerState?.equippedWeapon.name || 'Bamboo Shinai'}
+        onClose={() => setShowDuelModal(false)}
+        onDuelComplete={() => void loadData()}
+      />
     </SafeAreaView>
   );
 }
@@ -445,6 +477,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 230, 153, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  friendActionsCol: {
+    gap: 6,
+    marginLeft: 8,
+  },
+  duelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00E699',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 4,
+  },
+  duelBtnText: {
+    color: '#070A11',
+    fontSize: 10,
+    fontWeight: '800',
   },
   friendName: {
     fontSize: 15,

@@ -276,6 +276,8 @@ class VillainEngine {
 
     if (!row) return null;
 
+    const livePhase = getWeeklyTitanPhase(row.current_hp, row.max_hp);
+
     return {
       id: row.id,
       name: row.name,
@@ -286,7 +288,7 @@ class VillainEngine {
       element: row.element as any,
       maxHp: row.max_hp,
       currentHp: row.current_hp,
-      phase: row.phase,
+      phase: livePhase,
       weekId: row.week_id,
       status: row.status as any,
       coinsBounty: row.coins_bounty,
@@ -377,6 +379,42 @@ class VillainEngine {
       logText: r.log_text,
       createdAt: r.created_at,
     }));
+  }
+}
+
+export function getWeeklyTitanPhase(currentHp: number, maxHp: number): 1 | 2 | 3 {
+  const percent = maxHp > 0 ? (currentHp / maxHp) * 100 : 0;
+  if (percent > 66) return 1;
+  if (percent > 33) return 2;
+  return 3;
+}
+
+export function getPhaseModifier(
+  phase: 1 | 2 | 3,
+  source?: ActionSource
+): { multiplier: number; title: string; hint: string; color: string } {
+  switch (phase) {
+    case 1:
+      return {
+        multiplier: source === 'habit' || source === 'task' ? 1.5 : 1.0,
+        title: '🛡️ PHASE 1: OBSIDIAN ARMOR',
+        hint: 'Habits & tasks deal 1.5x Armor-Piercing DMG!',
+        color: '#38BDF8',
+      };
+    case 2:
+      return {
+        multiplier: source === 'pomodoro' ? 2.0 : 1.0,
+        title: '⚡ PHASE 2: VOID STORM',
+        hint: 'Pomodoro Deep Work deals 2.0x Critical DMG!',
+        color: '#A855F7',
+      };
+    case 3:
+      return {
+        multiplier: 2.5,
+        title: '🔥 PHASE 3: ENRAGED COLOSSUS',
+        hint: 'Frenzy active! All clan attacks deal 2.5x DMG!',
+        color: '#EF4444',
+      };
   }
 }
 

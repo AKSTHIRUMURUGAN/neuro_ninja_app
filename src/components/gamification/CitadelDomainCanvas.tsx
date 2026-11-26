@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Image,
   Dimensions,
   Platform,
+  AccessibilityInfo,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -48,6 +49,19 @@ export function CitadelDomainCanvas({
   onRestAtSprings,
 }: CitadelDomainCanvasProps) {
   const isGateDamaged = sentryGateDurability < sentryGateMax * 0.5;
+  const [isMuted, setIsMuted] = useState(gameAudio.getMuted());
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+  }, []);
+
+  const toggleMute = () => {
+    const next = !isMuted;
+    gameAudio.setMuted(next);
+    setIsMuted(next);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
 
   // Tenshu sprite by tier
   const tenshuSprite =
@@ -58,6 +72,7 @@ export function CitadelDomainCanvas({
   const mistOffset2 = useSharedValue(0);
 
   useEffect(() => {
+    if (reduceMotion) return;
     mistOffset1.value = withRepeat(
       withSequence(
         withTiming(15, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
@@ -135,9 +150,18 @@ export function CitadelDomainCanvas({
             TIER {tenshuLevel} CITADEL • {ninjaBelt.toUpperCase()} DOJO
           </Text>
         </View>
-        <View style={styles.stonePill}>
-          <MaterialCommunityIcons name="wall" size={13} color="#F59E0B" />
-          <Text style={styles.stoneText}>{castleStone} Stones</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={styles.stonePill}>
+            <MaterialCommunityIcons name="wall" size={13} color="#F59E0B" />
+            <Text style={styles.stoneText}>{castleStone} Stones</Text>
+          </View>
+          <TouchableOpacity style={styles.muteBtn} onPress={toggleMute} activeOpacity={0.7}>
+            <MaterialCommunityIcons
+              name={isMuted ? 'volume-off' : 'volume-high'}
+              size={14}
+              color={isMuted ? '#64748B' : '#00E699'}
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -314,6 +338,13 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
     fontSize: 10,
     fontWeight: '700',
+  },
+  muteBtn: {
+    padding: 4,
+    borderRadius: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderWidth: 1,
+    borderColor: '#1E293B',
   },
   buildingsStage: {
     flex: 1,

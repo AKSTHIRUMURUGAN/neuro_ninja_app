@@ -90,13 +90,11 @@ export default function ChestOpeningModal({
     }
   }, [visible, chestScale, chestShakeX]);
 
-  if (!chest) return null;
-
-  const theme = CHEST_THEMES[chest.tier] || CHEST_THEMES.bamboo;
-  const chestSprite = CHEST_SPRITES[chest.tier] || CHEST_SPRITES.bamboo;
+  const theme = (chest && CHEST_THEMES[chest.tier]) || CHEST_THEMES.bamboo;
+  const chestSprite = (chest && CHEST_SPRITES[chest.tier]) || CHEST_SPRITES.bamboo;
 
   const handleOpen = async () => {
-    if (isOpening || loot) return;
+    if (!chest || isOpening || loot) return;
     setIsOpening(true);
 
     // Audio & Rumble
@@ -172,6 +170,8 @@ export default function ChestOpeningModal({
     opacity: lootOpacity.value,
     transform: [{ scale: lootScale.value }],
   }));
+
+  if (!chest) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

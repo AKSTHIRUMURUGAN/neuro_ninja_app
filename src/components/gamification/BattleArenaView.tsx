@@ -7,6 +7,7 @@ import {
   Image,
   Dimensions,
   Platform,
+  AccessibilityInfo,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -21,6 +22,7 @@ import Animated, {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { gameAudio } from '../../services/audio/game-audio-engine';
+import { getWeeklyTitanPhase, getPhaseModifier } from '../../services/villains/villain-engine';
 
 interface DamagePopup {
   id: number;
@@ -104,11 +106,25 @@ export function BattleArenaView({
 
   // Floating damage popups
   const [popups, setPopups] = useState<DamagePopup[]>([]);
+  const [isMuted, setIsMuted] = useState<boolean>(gameAudio.getMuted());
+  const [reduceMotion, setReduceMotion] = useState<boolean>(false);
   const popupIdRef = useRef(0);
   const prevHpRef = useRef(currentHp);
 
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+  }, []);
+
+  const toggleMute = () => {
+    const next = !isMuted;
+    gameAudio.setMuted(next);
+    setIsMuted(next);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   // Idle floating animation
   useEffect(() => {
+    if (reduceMotion) return;
     bossIdleY.value = withRepeat(
       withSequence(
         withTiming(-8, { duration: 1800, easing: Easing.inOut(Easing.ease) }),
@@ -117,7 +133,7 @@ export function BattleArenaView({
       -1,
       true
     );
-  }, [bossIdleY]);
+  }, [bossIdleY, reduceMotion]);
 
   // Sync HP bar changes with dual-layer ghost decay
   useEffect(() => {
@@ -137,6 +153,7 @@ export function BattleArenaView({
 
   // Trigger screen shake
   const triggerScreenShake = useCallback(() => {
+    if (reduceMotion) return;
     arenaShakeX.value = withSequence(
       withTiming(-6, { duration: 40 }),
       withTiming(6, { duration: 40 }),
@@ -268,6 +285,8 @@ export function BattleArenaView({
   }));
 
   const bossSprite = getBossSprite(bossName, isWeekly);
+  const titanPhase = isWeekly ? getWeeklyTitanPhase(currentHp, maxHp) : null;
+  const phaseMod = titanPhase ? getPhaseModifier(titanPhase) : null;
 
   return (
     <Animated.View style={[styles.container, arenaStyle]}>
@@ -282,11 +301,20 @@ export function BattleArenaView({
               {isWeekly ? 'WORLD RAID TITAN' : isEnraged ? '🔥 ENRAGED BOSS' : 'DEMON BOSS'}
             </Text>
           </View>
-          {isDefeated && (
-            <View style={styles.defeatedBadge}>
-              <Text style={styles.defeatedBadgeText}>🏆 VANQUISHED</Text>
-            </View>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {isDefeated && (
+              <View style={styles.defeatedBadge}>
+                <Text style={styles.defeatedBadgeText}>🏆 VANQUISHED</Text>
+              </View>
+            )}
+            <TouchableOpacity style={styles.muteBtn} onPress={toggleMute} activeOpacity={0.7}>
+              <MaterialCommunityIcons
+                name={isMuted ? 'volume-off' : 'volume-high'}
+                size={16}
+                color={isMuted ? '#64748B' : '#00E699'}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text style={styles.bossNameText} numberOfLines={1}>
@@ -295,6 +323,15 @@ export function BattleArenaView({
         <Text style={styles.bossTitleText} numberOfLines={1}>
           {bossTitle}
         </Text>
+
+        {phaseMod && !isDefeated && (
+          <View style={[styles.phaseBanner, { borderColor: phaseMod.color }]}>
+            <Text style={[styles.phaseBannerTitle, { color: phaseMod.color }]}>
+              {phaseMod.title}
+            </Text>
+            <Text style={styles.phaseBannerHint}>{phaseMod.hint}</Text>
+          </View>
+        )}
       </View>
 
       {/* Dual-Layer Fighting Game Health Bar */}
@@ -473,6 +510,32 @@ const styles = StyleSheet.create({
     color: '#00E699',
     fontSize: 10,
     fontWeight: '800',
+  },
+  muteBtn: {
+    padding: 5,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  phaseBanner: {
+    marginTop: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  phaseBannerTitle: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  phaseBannerHint: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    marginTop: 2,
   },
   bossNameText: {
     color: '#F8FAFC',

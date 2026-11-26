@@ -1406,5 +1406,25 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
     await db.execAsync('PRAGMA user_version = 10');
   }
+
+  if (currentVersion < 11) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS friend_castle_duels (
+        id TEXT PRIMARY KEY,
+        attacker_id TEXT NOT NULL,
+        defender_id TEXT NOT NULL,
+        defender_name TEXT NOT NULL,
+        stars_earned INTEGER NOT NULL DEFAULT 0,
+        damage_dealt INTEGER NOT NULL DEFAULT 0,
+        destruction_percent INTEGER NOT NULL DEFAULT 0,
+        replay_events_json TEXT NOT NULL,
+        reward_coins INTEGER NOT NULL DEFAULT 0,
+        reward_xp INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+    `);
+
+    await db.execAsync('PRAGMA user_version = 11');
+  }
 }
 
