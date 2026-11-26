@@ -21,6 +21,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { gameAudio } from '../../services/audio/game-audio-engine';
 import type { PlayerChest } from '../../services/gamification/gamification-types';
+import { SpriteSheetAnimator } from './SpriteSheetAnimator';
+import { NINJA_ANIMATIONS, UI_GAME_ICONS } from '../../assets/game-asset-registry';
 
 interface LevelUpCelebrationModalProps {
   visible: boolean;
@@ -87,7 +89,17 @@ export function LevelUpCelebrationModal({
           <Text style={styles.headline}>LEVEL UP!</Text>
 
           <Animated.View style={[styles.avatarRing, badgeAnimStyle]}>
-            <Image source={NINJA_AVATAR} style={styles.avatarImg} resizeMode="contain" />
+            <Image
+              source={newLevel >= 5 ? UI_GAME_ICONS.frame_legendary : UI_GAME_ICONS.frame_rare}
+              style={{ position: 'absolute', width: 132, height: 132 }}
+              resizeMode="contain"
+            />
+            <SpriteSheetAnimator
+              frames={NINJA_ANIMATIONS.victory}
+              fps={10}
+              loop={true}
+              size={92}
+            />
             <View style={styles.levelBadge}>
               <Text style={styles.levelNum}>LV. {newLevel}</Text>
             </View>

@@ -23,6 +23,8 @@ import * as Haptics from 'expo-haptics';
 import type { PlayerChest } from '../../services/gamification/gamification-types';
 import { unifiedGamificationEngine } from '../../services/gamification/unified-gamification-engine';
 import { gameAudio } from '../../services/audio/game-audio-engine';
+import { SpriteSheetAnimator } from './SpriteSheetAnimator';
+import { CHEST_ASSETS, UI_GAME_ICONS } from '../../assets/game-asset-registry';
 
 interface ChestOpeningModalProps {
   visible: boolean;
@@ -34,13 +36,13 @@ interface ChestOpeningModalProps {
 const { width } = Dimensions.get('window');
 
 const CHEST_SPRITES = {
-  bamboo: require('../../../assets/game/items/chest_bamboo.png'),
-  jade: require('../../../assets/game/items/chest_jade.png'),
-  shadow: require('../../../assets/game/items/chest_shadow.png'),
-  mythic: require('../../../assets/game/items/chest_mythic.png'),
+  bamboo: CHEST_ASSETS.wooden_closed,
+  jade: CHEST_ASSETS.gold_closed,
+  shadow: CHEST_ASSETS.magic_closed,
+  mythic: CHEST_ASSETS.legendary_closed,
 };
 
-const COIN_GOLD_IMG = require('../../../assets/game/items/coin_gold.png');
+const COIN_GOLD_IMG = UI_GAME_ICONS.res_gold;
 
 const CHEST_THEMES = {
   bamboo: {
@@ -189,7 +191,16 @@ export default function ChestOpeningModal({
             <View style={styles.chestContainer}>
               <View style={[styles.chestHalo, { backgroundColor: theme.glowColor }]}>
                 <Animated.View style={chestAnimStyle}>
-                  <Image source={chestSprite} style={styles.chestSprite} resizeMode="contain" />
+                  {isOpening ? (
+                    <SpriteSheetAnimator
+                      frames={CHEST_ASSETS.openingFrames}
+                      fps={12}
+                      loop={false}
+                      size={130}
+                    />
+                  ) : (
+                    <Image source={chestSprite} style={styles.chestSprite} resizeMode="contain" />
+                  )}
                 </Animated.View>
               </View>
 
@@ -233,12 +244,12 @@ export default function ChestOpeningModal({
               </View>
 
               <View style={styles.lootItemRow}>
-                <MaterialCommunityIcons name="lightning-bolt" size={24} color="#818CF8" />
+                <Image source={UI_GAME_ICONS.res_energy} style={styles.coinSprite} resizeMode="contain" />
                 <Text style={styles.lootItemText}>+{loot.xp} Karma XP</Text>
               </View>
 
               <View style={styles.lootItemRow}>
-                <MaterialCommunityIcons name="wall" size={24} color="#F59E0B" />
+                <Image source={UI_GAME_ICONS.res_stone} style={styles.coinSprite} resizeMode="contain" />
                 <Text style={styles.lootItemText}>+{loot.castleStone} Castle Stones</Text>
               </View>
 

@@ -26,6 +26,12 @@ import {
   type BattleReplayEvent,
 } from '../../services/gamification/friend-duel-engine';
 import { gameAudio } from '../../services/audio/game-audio-engine';
+import { SpriteSheetAnimator } from './SpriteSheetAnimator';
+import {
+  NINJA_ANIMATIONS,
+  CASTLE_ASSETS,
+  UI_GAME_ICONS,
+} from '../../assets/game-asset-registry';
 
 interface FriendCastleDuelModalProps {
   visible: boolean;
@@ -39,13 +45,12 @@ interface FriendCastleDuelModalProps {
 
 const { width } = Dimensions.get('window');
 
-const NINJA_AVATAR = require('../../../assets/game/characters/ninja_avatar.png');
-const TENSHU_T1 = require('../../../assets/game/castle/tenshu_t1.png');
-const TENSHU_T2 = require('../../../assets/game/castle/tenshu_t2.png');
-const TENSHU_T3 = require('../../../assets/game/castle/tenshu_t3.png');
-const GATES_INTACT = require('../../../assets/game/castle/gates_intact.png');
-const GATES_DAMAGED = require('../../../assets/game/castle/gates_damaged.png');
-const COIN_GOLD_IMG = require('../../../assets/game/items/coin_gold.png');
+const TENSHU_T1 = CASTLE_ASSETS.keep_lv1;
+const TENSHU_T2 = CASTLE_ASSETS.keep_lv2;
+const TENSHU_T3 = CASTLE_ASSETS.keep_lv3;
+const GATES_INTACT = CASTLE_ASSETS.castle_gate;
+const GATES_DAMAGED = CASTLE_ASSETS.castle_gate_damaged;
+const COIN_GOLD_IMG = UI_GAME_ICONS.res_gold;
 
 export function FriendCastleDuelModal({
   visible,
@@ -232,7 +237,18 @@ export function FriendCastleDuelModal({
 
             {/* Attacker Shinobi */}
             <Animated.View style={[styles.attackerBox, shinobiAnimStyle]}>
-              <Image source={NINJA_AVATAR} style={styles.shinobiImg} resizeMode="contain" />
+              <SpriteSheetAnimator
+                frames={
+                  phase === 'result'
+                    ? NINJA_ANIMATIONS.victory
+                    : phase === 'fighting'
+                    ? NINJA_ANIMATIONS.attack
+                    : NINJA_ANIMATIONS.idle
+                }
+                fps={phase === 'fighting' ? 16 : 8}
+                loop={true}
+                size={96}
+              />
               <Text style={styles.unitTag} numberOfLines={1}>{weaponName}</Text>
             </Animated.View>
 

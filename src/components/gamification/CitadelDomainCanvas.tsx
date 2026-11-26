@@ -20,6 +20,7 @@ import Animated, {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { gameAudio } from '../../services/audio/game-audio-engine';
+import { CASTLE_ASSETS, UI_GAME_ICONS } from '../../assets/game-asset-registry';
 
 interface CitadelDomainCanvasProps {
   tenshuLevel: number;
@@ -31,13 +32,13 @@ interface CitadelDomainCanvasProps {
   onRestAtSprings?: () => void;
 }
 
-const TENSHU_T1 = require('../../../assets/game/castle/tenshu_t1.png');
-const TENSHU_T2 = require('../../../assets/game/castle/tenshu_t2.png');
-const TENSHU_T3 = require('../../../assets/game/castle/tenshu_t3.png');
-const FORGE_IMG = require('../../../assets/game/castle/forge_building.png');
-const SPRINGS_IMG = require('../../../assets/game/castle/springs_building.png');
-const GATES_INTACT = require('../../../assets/game/castle/gates_intact.png');
-const GATES_DAMAGED = require('../../../assets/game/castle/gates_damaged.png');
+const TENSHU_T1 = CASTLE_ASSETS.keep_lv1;
+const TENSHU_T2 = CASTLE_ASSETS.keep_lv2;
+const TENSHU_T3 = CASTLE_ASSETS.keep_lv3;
+const FORGE_IMG = CASTLE_ASSETS.task_forge;
+const SPRINGS_IMG = CASTLE_ASSETS.habit_shrine;
+const GATES_INTACT = CASTLE_ASSETS.castle_gate;
+const GATES_DAMAGED = CASTLE_ASSETS.castle_gate_damaged;
 
 export function CitadelDomainCanvas({
   tenshuLevel,
@@ -152,7 +153,7 @@ export function CitadelDomainCanvas({
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={styles.stonePill}>
-            <MaterialCommunityIcons name="wall" size={13} color="#F59E0B" />
+            <Image source={UI_GAME_ICONS.res_stone} style={{ width: 14, height: 14 }} resizeMode="contain" />
             <Text style={styles.stoneText}>{castleStone} Stones</Text>
           </View>
           <TouchableOpacity style={styles.muteBtn} onPress={toggleMute} activeOpacity={0.7}>
@@ -167,6 +168,18 @@ export function CitadelDomainCanvas({
 
       {/* 2D Building Interactive Placement Canvas */}
       <View style={styles.buildingsStage}>
+        {/* Decorative Isometric Bonsai & Lantern */}
+        <Image
+          source={CASTLE_ASSETS.decor_bonsai}
+          style={{ position: 'absolute', left: 10, top: 8, width: 44, height: 44, opacity: 0.9 }}
+          resizeMode="contain"
+        />
+        <Image
+          source={CASTLE_ASSETS.decor_lantern}
+          style={{ position: 'absolute', right: 12, top: 8, width: 40, height: 40, opacity: 0.9 }}
+          resizeMode="contain"
+        />
+
         {/* Upper Center: Grand Shogun Tenshu Palace */}
         <TouchableOpacity
           style={styles.tenshuPlacement}

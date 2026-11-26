@@ -16,6 +16,7 @@ import { unifiedGamificationEngine } from '../../../services/gamification/unifie
 import { gameAudio } from '../../../services/audio/game-audio-engine';
 import { BattleArenaView } from '../../../components/gamification/BattleArenaView';
 import { LevelUpCelebrationModal } from '../../../components/gamification/LevelUpCelebrationModal';
+import { getStoryChapterForLevel, UI_GAME_ICONS } from '../../../assets/game-asset-registry';
 import type { PlayerChest } from '../../../services/gamification/gamification-types';
 import { useNinjaBack } from '../../../hooks/use-ninja-back';
 import type {
@@ -284,6 +285,33 @@ export default function VillainsScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00E699" />}
       >
+        {/* Storyline Chapter Lore Pill */}
+        {(() => {
+          const ch = getStoryChapterForLevel(levelUpData.newLevel || 1);
+          return (
+            <View
+              style={{
+                backgroundColor: '#0D131F',
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: '#1E293B',
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                marginBottom: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <MaterialCommunityIcons name="book-open-page-variant" size={20} color="#F59E0B" />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>
+                  {ch.chapter}: {ch.title.toUpperCase()}
+                </Text>
+                <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>{ch.lore}</Text>
+              </View>
+            </View>
+          );
+        })()}
         {/* Daily Villain View */}
         {activeTab === 'daily' && daily && (
           <View>

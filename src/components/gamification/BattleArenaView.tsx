@@ -23,6 +23,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { gameAudio } from '../../services/audio/game-audio-engine';
 import { getWeeklyTitanPhase, getPhaseModifier } from '../../services/villains/villain-engine';
+import { SpriteSheetAnimator } from './SpriteSheetAnimator';
+import {
+  NINJA_ANIMATIONS,
+  SCROLL_HYDRA_ANIMATIONS,
+  getWeaponSpriteForId,
+} from '../../assets/game-asset-registry';
 
 interface DamagePopup {
   id: number;
@@ -106,6 +112,8 @@ export function BattleArenaView({
 
   // Floating damage popups
   const [popups, setPopups] = useState<DamagePopup[]>([]);
+  const [ninjaState, setNinjaState] = useState<'idle' | 'attack' | 'victory'>('idle');
+  const [hydraState, setHydraState] = useState<'idle' | 'attack'>('idle');
   const [isMuted, setIsMuted] = useState<boolean>(gameAudio.getMuted());
   const [reduceMotion, setReduceMotion] = useState<boolean>(false);
   const popupIdRef = useRef(0);
@@ -176,6 +184,9 @@ export function BattleArenaView({
     const isCrit = Math.random() < 0.28;
     const baseDamage = 75;
     const totalDmg = Math.round(baseDamage * playerWeaponMultiplier * (isCrit ? 1.75 : 1.0));
+
+    // Trigger 8-frame Chibi Ninja Sword Attack animation
+    setNinjaState('attack');
 
     // 1. Shinobi forward lunge
     ninjaTranslateX.value = withSequence(
@@ -366,13 +377,34 @@ export function BattleArenaView({
 
         {/* Player Shinobi (Left Fighter) */}
         <Animated.View style={[styles.fighterWrapper, styles.ninjaWrapper, ninjaStyle]}>
-          <Image source={NINJA_AVATAR} style={styles.ninjaSprite} resizeMode="contain" />
+          <SpriteSheetAnimator
+            frames={
+              isDefeated
+                ? NINJA_ANIMATIONS.victory
+                : ninjaState === 'attack'
+                ? NINJA_ANIMATIONS.attack
+                : NINJA_ANIMATIONS.idle
+            }
+            fps={ninjaState === 'attack' ? 18 : 8}
+            loop={ninjaState !== 'attack'}
+            size={112}
+            onComplete={() => {
+              if (ninjaState === 'attack') setNinjaState('idle');
+            }}
+          />
           <View style={styles.playerShadow} />
           <View style={styles.fighterLabelBox}>
             <Text style={styles.fighterLabelText}>SHINOBI</Text>
-            <Text style={styles.weaponLabelText} numberOfLines={1}>
-              {playerWeaponName}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Image
+                source={getWeaponSpriteForId(playerWeaponName)}
+                style={{ width: 14, height: 14 }}
+                resizeMode="contain"
+              />
+              <Text style={styles.weaponLabelText} numberOfLines={1}>
+                {playerWeaponName}
+              </Text>
+            </View>
           </View>
         </Animated.View>
 
@@ -384,14 +416,32 @@ export function BattleArenaView({
 
         {/* Boss Target (Right Fighter) */}
         <Animated.View style={[styles.fighterWrapper, styles.bossWrapper, bossStyle]}>
-          <Image
-            source={bossSprite}
-            style={[
-              styles.bossSprite,
-              isDefeated && { opacity: 0.35, tintColor: '#64748B' },
-            ]}
-            resizeMode="contain"
-          />
+          {!isWeekly ? (
+            <SpriteSheetAnimator
+              frames={
+                hydraState === 'attack'
+                  ? SCROLL_HYDRA_ANIMATIONS.attack
+                  : SCROLL_HYDRA_ANIMATIONS.idle
+              }
+              fps={hydraState === 'attack' ? 14 : 7}
+              loop={hydraState !== 'attack'}
+              size={116}
+              flipX={true}
+              style={isDefeated ? { opacity: 0.35 } : undefined}
+              onComplete={() => {
+                if (hydraState === 'attack') setHydraState('idle');
+              }}
+            />
+          ) : (
+            <Image
+              source={bossSprite}
+              style={[
+                styles.bossSprite,
+                isDefeated && { opacity: 0.35, tintColor: '#64748B' },
+              ]}
+              resizeMode="contain"
+            />
+          )}
           {/* Boss Hit-Flash Overlay */}
           <Animated.View style={[styles.bossHitFlash, bossFlashStyle]} pointerEvents="none" />
           <View style={styles.bossShadow} />

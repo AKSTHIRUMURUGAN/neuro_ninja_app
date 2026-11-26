@@ -13,6 +13,11 @@ const GAME_SOUND_ASSETS = {
   chest_reveal: require('../../../assets/game/sounds/chest_reveal.wav'),
   hammer_strike: require('../../../assets/game/sounds/hammer_strike.wav'),
   fanfare_taiko: require('../../../assets/game/sounds/fanfare_taiko.wav'),
+  sfx_chest_open: require('../../../assets/game/v2/audio/sfx_chest_open.mp3'),
+  sfx_level_up: require('../../../assets/game/v2/audio/sfx_level_up.mp3'),
+  sfx_mission_complete: require('../../../assets/game/v2/audio/sfx_mission_complete.mp3'),
+  sfx_rare_reward: require('../../../assets/game/v2/audio/sfx_rare_reward.mp3'),
+  sfx_xp_gain: require('../../../assets/game/v2/audio/sfx_xp_gain.mp3'),
 };
 
 export type GameSoundId = keyof typeof GAME_SOUND_ASSETS;
@@ -116,7 +121,21 @@ class GameAudioEngine {
 
   async playChestUnlock() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    await this.playSound('chest_reveal', 1.0);
+    await this.playSound('sfx_chest_open', 1.0);
+  }
+
+  async playMissionComplete() {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    await this.playSound('sfx_mission_complete', 0.95);
+  }
+
+  async playRareReward() {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    await this.playSound('sfx_rare_reward', 1.0);
+  }
+
+  async playXpGain() {
+    await this.playSound('sfx_xp_gain', 0.85);
   }
 
   async playGateImpact() {
@@ -156,7 +175,7 @@ class GameAudioEngine {
 
   async playLevelUp() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    await this.playSound('fanfare_taiko', 1.0);
+    await this.playSound('sfx_level_up', 1.0);
   }
 }
 

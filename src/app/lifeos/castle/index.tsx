@@ -19,6 +19,7 @@ import { unifiedGamificationEngine } from '../../../services/gamification/unifie
 import { walletService } from '../../../services/wallet/wallet-service';
 import ChestOpeningModal from '../../../components/gamification/ChestOpeningModal';
 import { CitadelDomainCanvas } from '../../../components/gamification/CitadelDomainCanvas';
+import { getChestSpriteForTier } from '../../../assets/game-asset-registry';
 import type {
   PlayerRpgState,
   CastleBuilding,
@@ -27,10 +28,10 @@ import type {
 import type { WalletBalance } from '../../../services/wallet/wallet-types';
 
 const CHEST_SPRITES: Record<string, any> = {
-  bamboo: require('../../../../assets/game/items/chest_bamboo.png'),
-  jade: require('../../../../assets/game/items/chest_jade.png'),
-  shadow: require('../../../../assets/game/items/chest_shadow.png'),
-  mythic: require('../../../../assets/game/items/chest_mythic.png'),
+  bamboo: getChestSpriteForTier('bamboo'),
+  jade: getChestSpriteForTier('jade'),
+  shadow: getChestSpriteForTier('shadow'),
+  mythic: getChestSpriteForTier('mythic'),
 };
 
 export default function NinjaCastleScreen() {
