@@ -108,7 +108,7 @@ export default function FriendsClanScreen() {
           onPress={() => router.push('/lifeos/profile' as any)}
           activeOpacity={0.7}
         >
-          <MaterialCommunityIcons name="account-circle" size={20} color="#00E699" />
+          <MaterialCommunityIcons name="shield-account" size={20} color="#00E699" />
         </TouchableOpacity>
       </View>
 
@@ -565,3 +565,4 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 });
+

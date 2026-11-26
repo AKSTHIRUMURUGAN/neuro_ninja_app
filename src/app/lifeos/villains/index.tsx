@@ -12,6 +12,8 @@ import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-ico
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { villainEngine } from '../../../services/villains/villain-engine';
+import { gameAudio } from '../../../services/audio/game-audio-engine';
+import { BattleArenaView } from '../../../components/gamification/BattleArenaView';
 import { useNinjaBack } from '../../../hooks/use-ninja-back';
 import type {
   DailyVillain,
@@ -61,6 +63,20 @@ export default function VillainsScreen() {
     setRefreshing(true);
     await loadVillainData();
     setRefreshing(false);
+  };
+
+  const handleDirectAttack = async (damage: number, isCrit: boolean) => {
+    try {
+      const baseDmg = Math.max(1, Math.round(damage / (player?.equippedWeapon.multiplier || 1)));
+      const res = await villainEngine.dealDamage('pomodoro', baseDmg, isCrit ? 'Shinobi Critical Slash' : 'Shinobi Katana Strike');
+      if (res.dailyDefeated || res.weeklyDefeated) {
+        void gameAudio.playBossDeath();
+        void gameAudio.playFanfare();
+      }
+      await loadVillainData();
+    } catch (e) {
+      console.warn('[VillainsScreen] Attack error:', e);
+    }
   };
 
   const dailyHpPercent =
@@ -262,70 +278,30 @@ export default function VillainsScreen() {
               </View>
             )}
 
-            {/* Boss Card */}
-            <View style={[styles.bossCard, { borderColor: daily.themeColor }]}>
-              <View
-                style={[
-                  styles.bossAvatarCircle,
-                  { backgroundColor: `${daily.themeColor}20`, borderColor: daily.themeColor },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={(daily.avatarSymbol as any) || 'skull'}
-                  size={46}
-                  color={daily.themeColor}
-                />
-              </View>
+            {/* 2D Real Fighting Battle Arena */}
+            <BattleArenaView
+              bossName={daily.name}
+              bossTitle={daily.title}
+              currentHp={daily.currentHp}
+              maxHp={daily.maxHp}
+              themeColor={daily.themeColor}
+              isWeekly={false}
+              isEnraged={daily.isEnraged}
+              isDefeated={daily.status === 'defeated'}
+              playerWeaponName={player?.equippedWeapon.name}
+              playerWeaponMultiplier={player?.equippedWeapon.multiplier}
+              onAttack={handleDirectAttack}
+            />
 
+            {/* Boss Lore & Defeat Bounty */}
+            <View style={[styles.bossCard, { borderColor: daily.themeColor }]}>
               <View style={[styles.elementTag, { backgroundColor: `${daily.themeColor}25` }]}>
                 <Text style={[styles.elementText, { color: daily.themeColor }]}>
-                  {daily.element.toUpperCase()} ARCH-DEMON
+                  {daily.element.toUpperCase()} ARCH-DEMON LORE
                 </Text>
               </View>
 
-              <Text style={styles.bossName}>{daily.name}</Text>
-              <Text style={styles.bossTitle}>{daily.title}</Text>
               <Text style={styles.bossDesc}>{daily.description}</Text>
-
-              <View
-                style={[
-                  styles.statusPill,
-                  daily.status === 'defeated'
-                    ? { backgroundColor: 'rgba(0, 230, 153, 0.15)' }
-                    : { backgroundColor: 'rgba(239, 68, 68, 0.15)' },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusPillText,
-                    daily.status === 'defeated' ? { color: '#00E699' } : { color: '#EF4444' },
-                  ]}
-                >
-                  {daily.status === 'defeated' ? '⚔️ DEFEATED TODAY' : '🔥 ACTIVE TARGET'}
-                </Text>
-              </View>
-
-              {/* HP Bar */}
-              <View style={styles.hpSection}>
-                <View style={styles.hpLabelRow}>
-                  <Text style={styles.hpTitle}>VILLAIN HEALTH</Text>
-                  <Text style={styles.hpNumbers}>
-                    {daily.currentHp} / {daily.maxHp} HP ({dailyHpPercent}%)
-                  </Text>
-                </View>
-                <View style={styles.hpTrack}>
-                  <View
-                    style={[
-                      styles.hpFill,
-                      {
-                        width: `${dailyHpPercent}%`,
-                        backgroundColor:
-                          dailyHpPercent > 50 ? '#EF4444' : dailyHpPercent > 20 ? '#F59E0B' : '#00E699',
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
 
               {/* Defeat Bounty */}
               <View style={styles.bountyBox}>
@@ -399,17 +375,26 @@ export default function VillainsScreen() {
         {/* Weekly Titan Raid View */}
         {activeTab === 'weekly' && weekly && (
           <View>
+            {/* 2D Real Fighting Battle Arena for Weekly Titan */}
+            <BattleArenaView
+              bossName={weekly.name}
+              bossTitle={weekly.title}
+              currentHp={weekly.currentHp}
+              maxHp={weekly.maxHp}
+              themeColor={weekly.themeColor}
+              isWeekly={true}
+              isEnraged={false}
+              isDefeated={weekly.status === 'defeated'}
+              playerWeaponName={player?.equippedWeapon.name}
+              playerWeaponMultiplier={player?.equippedWeapon.multiplier}
+              onAttack={handleDirectAttack}
+            />
+
             <View style={[styles.bossCard, { borderColor: '#818CF8' }]}>
-              <View style={[styles.bossAvatarCircle, { backgroundColor: 'rgba(129, 140, 248, 0.1)', borderColor: '#818CF8' }]}>
-                <FontAwesome5 name="dragon" size={44} color="#818CF8" />
-              </View>
-
               <View style={[styles.elementTag, { backgroundColor: 'rgba(129, 140, 248, 0.2)' }]}>
-                <Text style={[styles.elementText, { color: '#818CF8' }]}>WEEKLY WORLD RAID TITAN</Text>
+                <Text style={[styles.elementText, { color: '#818CF8' }]}>WEEKLY WORLD RAID TITAN LORE</Text>
               </View>
 
-              <Text style={styles.bossName}>{weekly.name}</Text>
-              <Text style={styles.bossTitle}>{weekly.title}</Text>
               <Text style={styles.bossDesc}>{weekly.description}</Text>
 
               {/* Phase Indicator */}
@@ -419,27 +404,6 @@ export default function VillainsScreen() {
                   <View style={[styles.phaseDot, weekly.phase >= 1 && styles.phaseDotActive]} />
                   <View style={[styles.phaseDot, weekly.phase >= 2 && styles.phaseDotActive]} />
                   <View style={[styles.phaseDot, weekly.phase >= 3 && styles.phaseDotActive]} />
-                </View>
-              </View>
-
-              {/* HP Bar */}
-              <View style={styles.hpSection}>
-                <View style={styles.hpLabelRow}>
-                  <Text style={styles.hpTitle}>WORLD TITAN RAID HP</Text>
-                  <Text style={styles.hpNumbers}>
-                    {weekly.currentHp} / {weekly.maxHp} HP ({weeklyHpPercent}%)
-                  </Text>
-                </View>
-                <View style={styles.hpTrack}>
-                  <View
-                    style={[
-                      styles.hpFill,
-                      {
-                        width: `${weeklyHpPercent}%`,
-                        backgroundColor: '#818CF8',
-                      },
-                    ]}
-                  />
                 </View>
               </View>
 

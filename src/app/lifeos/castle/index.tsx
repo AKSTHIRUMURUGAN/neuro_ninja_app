@@ -7,6 +7,7 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
@@ -17,12 +18,20 @@ import { useNinjaAlert } from '../../../context/ninja-alert-context';
 import { unifiedGamificationEngine } from '../../../services/gamification/unified-gamification-engine';
 import { walletService } from '../../../services/wallet/wallet-service';
 import ChestOpeningModal from '../../../components/gamification/ChestOpeningModal';
+import { CitadelDomainCanvas } from '../../../components/gamification/CitadelDomainCanvas';
 import type {
   PlayerRpgState,
   CastleBuilding,
   PlayerChest,
 } from '../../../services/gamification/gamification-types';
 import type { WalletBalance } from '../../../services/wallet/wallet-types';
+
+const CHEST_SPRITES: Record<string, any> = {
+  bamboo: require('../../../../assets/game/items/chest_bamboo.png'),
+  jade: require('../../../../assets/game/items/chest_jade.png'),
+  shadow: require('../../../../assets/game/items/chest_shadow.png'),
+  mythic: require('../../../../assets/game/items/chest_mythic.png'),
+};
 
 export default function NinjaCastleScreen() {
   const router = useRouter();
@@ -145,47 +154,28 @@ export default function NinjaCastleScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00E699" />}
       >
-        {/* Castle Hero Banner */}
-        <View style={styles.citadelHero}>
-          <View style={styles.citadelIconRow}>
-            <MaterialCommunityIcons name="castle" size={48} color="#00E699" />
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={styles.heroTierLabel}>TIER {player?.tenshuLevel || 1} FORTRESS</Text>
-              <Text style={styles.heroCastleName}>Tenshu Citadel</Text>
-              <Text style={styles.heroSub}>
-                Guarded by {player?.ninjaBelt || 'White Belt'} Ninja
-              </Text>
-            </View>
-          </View>
-
-          {/* Sentry Gate Defense Bar */}
-          <View style={styles.defenseBox}>
-            <View style={styles.defenseHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <MaterialCommunityIcons name="shield-lock" size={16} color="#00E699" />
-                <Text style={styles.defenseTitle}>Sentry Gate Integrity</Text>
-              </View>
-              <Text style={styles.defenseVal}>
-                {player?.sentryGateDurability ?? 100}/{player?.sentryGateMax ?? 100}
-              </Text>
-            </View>
-            <View style={styles.progressBarBg}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width: `${Math.round(
-                      ((player?.sentryGateDurability ?? 100) / (player?.sentryGateMax ?? 100)) * 100
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.defenseHint}>
-              Absorbs 50% of distraction breaches. Upgrades automatically fortify your barriers.
-            </Text>
-          </View>
-        </View>
+        {/* Interactive 2D Citadel Domain Canvas */}
+        <CitadelDomainCanvas
+          tenshuLevel={player?.tenshuLevel || 1}
+          sentryGateDurability={player?.sentryGateDurability ?? 100}
+          sentryGateMax={player?.sentryGateMax ?? 100}
+          castleStone={player?.castleStone ?? 0}
+          ninjaBelt={player?.ninjaBelt || 'White Belt'}
+          onSelectBuilding={(type) => {
+            if (type === 'forge') {
+              router.push('/lifeos/forge' as any);
+            } else if (type === 'springs') {
+              void handleRestAtSprings();
+            } else {
+              showToast({
+                title: type === 'tenshu' ? 'Tenshu Keep 🏯' : 'Sentry Gate ⛩️',
+                message: 'Scroll down to Citadel Districts to upgrade this stronghold.',
+                type: 'info',
+              });
+            }
+          }}
+          onRestAtSprings={handleRestAtSprings}
+        />
 
         {/* Unopened Mystery Chests Vault Bar */}
         <View style={styles.chestsSection}>
@@ -210,26 +200,10 @@ export default function NinjaCastleScreen() {
                   onPress={() => handleOpenChestClick(c)}
                   activeOpacity={0.8}
                 >
-                  <MaterialCommunityIcons
-                    name={
-                      c.tier === 'mythic'
-                        ? 'crown'
-                        : c.tier === 'shadow'
-                        ? 'shield-star'
-                        : c.tier === 'jade'
-                        ? 'treasure-chest'
-                        : 'cube-outline'
-                    }
-                    size={36}
-                    color={
-                      c.tier === 'mythic'
-                        ? '#F59E0B'
-                        : c.tier === 'shadow'
-                        ? '#818CF8'
-                        : c.tier === 'jade'
-                        ? '#00E699'
-                        : '#10B981'
-                    }
+                  <Image
+                    source={CHEST_SPRITES[c.tier] || CHEST_SPRITES.bamboo}
+                    style={styles.chestSpriteThumb}
+                    resizeMode="contain"
                   />
                   <Text style={styles.chestTierName}>{c.tier.toUpperCase()}</Text>
                   <Text style={styles.chestSource} numberOfLines={1}>{c.sourceAction}</Text>
@@ -488,6 +462,11 @@ const styles = StyleSheet.create({
   },
   chestRow: {
     gap: 12,
+  },
+  chestSpriteThumb: {
+    width: 48,
+    height: 48,
+    marginBottom: 4,
   },
   chestCard: {
     width: 120,
