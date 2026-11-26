@@ -160,15 +160,6 @@ export default function GhostLauncherScreen() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Inverted Accessibility Architecture:
-  // When in Ghost Launcher / Home, ensure Accessibility is OFF so Google Pay / UPI are never blocked!
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS === 'android') {
-        blockerEngine.setAccessibilityServiceEnabled(false);
-      }
-    }, [])
-  );
 
   // Android Launcher State
   const [isDefaultLauncher, setIsDefaultLauncher] = useState<boolean>(false);
@@ -417,8 +408,6 @@ export default function GhostLauncherScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      // Whenever user returns to Home / Ghost Launcher, ensure Accessibility is OFF for payment safety
-      void blockerEngine.setAccessibilityServiceEnabled(false);
       // Auto-refresh installed apps so newly installed apps appear immediately
       void loadInstalledApps(true);
     }, [loadInstalledApps])
@@ -522,15 +511,67 @@ export default function GhostLauncherScreen() {
       }
     }
 
-    // When searching, search across all non-hidden apps by name, alias, category, or package
+    // When searching, sort strictly by industry-standard multi-tier relevance:
+    // 1. Exact match on app name
+    // 2. App name STARTS WITH query (e.g. "Play Store", "Play Games" for "play")
+    // 3. Word in app name starts with query (e.g. "Google Play Store" -> "Play")
+    // 4. App name contains query substring
+    // 5. Custom nickname / alias contains query
+    // 6. Category name contains query
+    // 7. Package name contains query (e.g. FM Radio com.motorola.fmplayer -> lowest tier)
     if (searchQuery.trim().length > 0) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (a) =>
-          (a.customName || a.name).toLowerCase().includes(q) ||
-          a.category.toLowerCase().includes(q) ||
-          (a.packageName && a.packageName.toLowerCase().includes(q))
-      );
+      const scored: { app: GhostApp; score: number }[] = [];
+
+      for (const a of list) {
+        const rawName = (a.customName || a.name || '').toLowerCase();
+        const pkg = (a.packageName || '').toLowerCase();
+        const cat = (a.category || '').toLowerCase();
+
+        let score = 0;
+        if (rawName === q) {
+          // Tier 1: Exact App Name
+          score = 10000;
+        } else if (rawName.startsWith(q)) {
+          // Tier 2: Name starts with query
+          score = 5000 + (100 - Math.min(90, rawName.length));
+        } else {
+          // Tier 3: Word in name starts with query ("Google Play Store" -> "Play")
+          const words = rawName.split(/[\s\-_\.:\/]+/);
+          const wordIndex = words.findIndex((w) => w.startsWith(q));
+          if (wordIndex >= 0) {
+            score = 3500 - (wordIndex * 50) + (100 - Math.min(90, rawName.length));
+          } else if (rawName.includes(q)) {
+            // Tier 4: App name contains substring
+            const subIndex = rawName.indexOf(q);
+            score = 2000 - Math.min(500, subIndex * 15);
+          } else if (a.customName && a.customName.toLowerCase().includes(q)) {
+            // Tier 5: Custom nickname contains query
+            score = 1000;
+          } else if (cat.includes(q)) {
+            // Tier 6: Category matches query
+            score = 500;
+          } else if (pkg.includes(q) && q.length >= 2) {
+            // Tier 7: Package matches query (e.g. com.motorola.fmplayer) -> lowest priority
+            score = 50;
+          }
+        }
+
+        if (score > 0) {
+          scored.push({ app: a, score });
+        }
+      }
+
+      // Sort by relevance score descending, then favorites, then alphabetical
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.app.isFavorite !== a.app.isFavorite) {
+          return (b.app.isFavorite ? 1 : 0) - (a.app.isFavorite ? 1 : 0);
+        }
+        return a.app.name.localeCompare(b.app.name);
+      });
+
+      return scored.map((item) => item.app);
     }
 
     return list;
