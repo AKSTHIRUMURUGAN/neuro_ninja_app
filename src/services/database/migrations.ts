@@ -1700,5 +1700,117 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
     await db.execAsync('PRAGMA user_version = 15');
   }
+
+  if (currentVersion < 16) {
+    console.log('[SQLite] Migrating to v16 (Wake-Word KWS + Offline Local LLM Modules)...');
+    const kwsBase =
+      'https://huggingface.co/mobilebytesensei/sherpa-onnx-kws-zipformer-gigaspeech-3.3M/resolve/main';
+    const qwen05Url =
+      'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
+    const qwen15Url =
+      'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf';
+
+    const kwsFiles = [
+      {
+        name: 'encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx',
+        url: `${kwsBase}/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx`,
+        size: 4807159,
+      },
+      {
+        name: 'decoder-epoch-12-avg-2-chunk-16-left-64.onnx',
+        url: `${kwsBase}/decoder-epoch-12-avg-2-chunk-16-left-64.onnx`,
+        size: 1063189,
+      },
+      {
+        name: 'joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx',
+        url: `${kwsBase}/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx`,
+        size: 163380,
+      },
+      { name: 'tokens.txt', url: `${kwsBase}/tokens.txt`, size: 5006 },
+      { name: 'bpe.model', url: `${kwsBase}/bpe.model`, size: 244837 },
+    ];
+
+    const v16Modules = [
+      {
+        id: 'kws-en-v1',
+        languageId: 'shared',
+        displayName: 'Wake-Word ("Hi NeuroNinja")',
+        nativeName: 'Always-On Trigger (3.3M)',
+        capability: 'kws',
+        modelName: 'sherpa-onnx-kws-zipformer-gigaspeech-3.3M',
+        licence: 'Apache 2.0',
+        size: 6283571,
+        files: kwsFiles,
+      },
+      {
+        id: 'llm-qwen2.5-0.5b-q4',
+        languageId: 'shared',
+        displayName: 'Local LLM Ultra-Light (0.5B)',
+        nativeName: '3–4 GB RAM · ~25–35 tok/s',
+        capability: 'llm',
+        modelName: 'Qwen2.5-0.5B-Instruct (Q4_K_M GGUF)',
+        licence: 'Apache 2.0',
+        size: 491400032,
+        files: [{ name: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', url: qwen05Url, size: 491400032 }],
+      },
+      {
+        id: 'llm-qwen2.5-1.5b-q4',
+        languageId: 'shared',
+        displayName: 'Local LLM Balanced (1.5B)',
+        nativeName: '4–6 GB+ RAM · Best Intent & JSON',
+        capability: 'llm',
+        modelName: 'Qwen2.5-1.5B-Instruct (Q4_K_M GGUF)',
+        licence: 'Apache 2.0',
+        size: 1117320736,
+        files: [{ name: 'qwen2.5-1.5b-instruct-q4_k_m.gguf', url: qwen15Url, size: 1117320736 }],
+      },
+    ];
+
+    const now = new Date().toISOString();
+    for (const m of v16Modules) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO voice_pack_modules
+          (id, language_id, display_name, native_name, capability, model_name, licence, size_bytes, manifest_json, status, is_active, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_installed', 1, ?)`,
+        m.id,
+        m.languageId,
+        m.displayName,
+        m.nativeName,
+        m.capability,
+        m.modelName,
+        m.licence,
+        m.size,
+        JSON.stringify(m.files),
+        now
+      );
+    }
+
+    await db.execAsync('PRAGMA user_version = 16');
+  }
+
+  if (currentVersion < 17) {
+    console.log('[SQLite] Migrating to v17 (openWakeWord Ready-to-Use Engine Pack)...');
+    const owwBase = 'https://github.com/dscripka/openWakeWord/releases/download/v0.5.1';
+    const owwFiles = [
+      { name: 'melspectrogram.onnx', url: `${owwBase}/melspectrogram.onnx`, size: 1087958 },
+      { name: 'embedding_model.onnx', url: `${owwBase}/embedding_model.onnx`, size: 1326578 },
+      { name: 'hey_jarvis_v0.1.onnx', url: `${owwBase}/hey_jarvis_v0.1.onnx`, size: 1271370 },
+    ];
+    await db.runAsync(
+      `INSERT OR IGNORE INTO voice_pack_modules
+        (id, language_id, display_name, native_name, capability, model_name, licence, size_bytes, manifest_json, status, is_active, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_installed', 1, ?)`,
+      'oww-en-v1',
+      'shared',
+      'openWakeWord ("Hey Jarvis" / Custom "Hi Ninja")',
+      'Dedicated 3-Stage ONNX (<1.5% CPU)',
+      'openWakeWord v0.5.1 (Apache 2.0)',
+      'Apache 2.0',
+      3685906,
+      JSON.stringify(owwFiles),
+      new Date().toISOString()
+    );
+    await db.execAsync('PRAGMA user_version = 17');
+  }
 }
 

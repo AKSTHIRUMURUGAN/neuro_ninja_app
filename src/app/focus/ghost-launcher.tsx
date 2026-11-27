@@ -24,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNinja } from '../../context/ninja-context';
 import { useNinjaAlert } from '../../context/ninja-alert-context';
 import { blockerEngine } from '../../services/blocker/blocker-engine';
+import { assistantController } from '../../services/voice/assistant-controller';
 import {
   checkLauncherStatus,
   promptSetDefaultLauncher,
@@ -134,6 +135,7 @@ export default function GhostLauncherScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [matchedContacts, setMatchedContacts] = useState<QuickContact[]>([]);
   const [hasContactsPermission, setHasContactsPermission] = useState<boolean>(true);
+  const [wakeWordActive, setWakeWordActive] = useState(false);
 
   // Check initial contact permission
   useEffect(() => {
@@ -385,6 +387,11 @@ export default function GhostLauncherScreen() {
     useCallback(() => {
       // Auto-refresh installed apps so newly installed apps appear immediately
       void loadInstalledApps(true);
+      const unsub = assistantController.onStatusChange(setWakeWordActive);
+      void assistantController.armWakeWord();
+      return () => {
+        unsub();
+      };
     }, [loadInstalledApps])
   );
 
@@ -882,6 +889,29 @@ export default function GhostLauncherScreen() {
                 <Ionicons name="close-circle" size={16} color={themeStyles.subtext} />
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              onPress={() => assistantController.trigger('Ghost Launcher')}
+              style={{
+                marginLeft: 8,
+                paddingHorizontal: wakeWordActive ? 8 : 4,
+                paddingVertical: 3,
+                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                backgroundColor: wakeWordActive ? 'rgba(0,230,153,0.14)' : 'transparent',
+              }}
+              accessibilityLabel="Voice Assistant"
+            >
+              <Ionicons
+                name="mic"
+                size={16}
+                color={wakeWordActive ? '#00E699' : themeStyles.subtext}
+              />
+              {wakeWordActive ? (
+                <Text style={{ color: '#00E699', fontSize: 10, fontWeight: '800' }}>Hi Ninja</Text>
+              ) : null}
+            </TouchableOpacity>
           </View>
         )}
 

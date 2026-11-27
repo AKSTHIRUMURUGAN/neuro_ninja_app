@@ -41,6 +41,46 @@ const OfflineSpeechNative = NativeModules.NinjaOfflineSpeechModule as
       stopSpeaking: () => Promise<boolean>;
       startOfflineListening: (sttDir: string, vadModelPath: string | null) => Promise<string>;
       stopOfflineListening: () => Promise<boolean>;
+      startWakeWordListening: (kwsDir: string, vadModelPath: string | null) => Promise<boolean>;
+      stopWakeWordListening: () => Promise<boolean>;
+      warmUpModels?: (ttsDir: string | null, sttDir: string | null) => Promise<boolean>;
+      requestAssistantAudioFocus?: () => Promise<boolean>;
+      abandonAssistantAudioFocus?: () => Promise<boolean>;
+      startBargeInMonitor?: (vadModelPath: string | null) => Promise<boolean>;
+      stopBargeInMonitor?: () => Promise<boolean>;
+      isHeadsetConnected?: () => Promise<boolean>;
+      setCommunicationAudioMode?: (enabled: boolean) => Promise<boolean>;
+      setBackgroundWakeWordService?: (enabled: boolean) => Promise<boolean>;
+      openBatteryOptimizationSettings?: () => Promise<boolean>;
+      setWakeWordSensitivity?: (threshold: number) => Promise<boolean>;
+      setWakeWordMode?: (mode: string) => Promise<boolean>;
+      recordCustomWakeSample?: (
+        owwDir: string,
+        durationMs: number
+      ) => Promise<{ embeddingJson: string; rmsPct: number }>;
+      recordRoomNoiseCalibration?: (
+        owwDir: string,
+        durationMs: number
+      ) => Promise<{ negSamplesJson: string; bgMeanJson: string; rmsPct: number }>;
+      saveCustomWakeProfile?: (
+        owwDir: string,
+        phrase: string,
+        samplesJson: string,
+        negSamplesJson: string | null,
+        bgMeanJson: string | null,
+        append: boolean
+      ) => Promise<number>;
+      getCustomWakeProfile?: (
+        owwDir: string
+      ) => Promise<{
+        phrase: string;
+        sampleCount: number;
+        maxSamples?: number;
+        hasNoiseCalibration?: boolean;
+      } | null>;
+      clearCustomWakeProfile?: (owwDir: string) => Promise<boolean>;
+      playWakeChime?: () => Promise<boolean>;
+      setIgnoreDeviceMediaAudio?: (enabled: boolean) => Promise<boolean>;
     }
   | undefined;
 
@@ -92,12 +132,41 @@ class UnifiedVoiceService {
       }
     }
 
-    // Tier 3: Zero-download OS Speech
+    // Tier 3: Zero-download OS Speech (wait until TextToSpeech actually finishes speaking)
     try {
-      Speech.speak(clean, {
-        language: opts.lang || 'en-IN',
-        rate,
-        pitch: opts.pitch ?? 1.0,
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        let pollTimer: ReturnType<typeof setInterval> | null = null;
+        let maxTimer: ReturnType<typeof setTimeout> | null = null;
+        const done = () => {
+          if (!settled) {
+            settled = true;
+            if (pollTimer) clearInterval(pollTimer);
+            if (maxTimer) clearTimeout(maxTimer);
+            resolve();
+          }
+        };
+        Speech.speak(clean, {
+          language: opts.lang || 'en-IN',
+          rate,
+          pitch: opts.pitch ?? 1.0,
+          onDone: done,
+          onStopped: done,
+          onError: done,
+        });
+        // Guard against missed onDone by polling Speech.isSpeakingAsync() after initial startup
+        const minWait = Math.max(1800, clean.length * 85);
+        setTimeout(() => {
+          if (settled) return;
+          pollTimer = setInterval(() => {
+            void Speech.isSpeakingAsync()
+              .then((speaking) => {
+                if (!speaking) done();
+              })
+              .catch(() => done());
+          }, 220);
+        }, minWait);
+        maxTimer = setTimeout(done, Math.max(6000, clean.length * 160));
       });
       return 'os';
     } catch (e) {
@@ -128,6 +197,15 @@ class UnifiedVoiceService {
    * Tier 4: Optional opt-in Cloud STT
    */
   async startListening(opts: ListenOptions = {}): Promise<VoiceListenResult> {
+    // Hard guard: never open STT mic while TTS is still speaking out of the speaker
+    try {
+      const stillSpeaking = await Speech.isSpeakingAsync();
+      if (stillSpeaking) {
+        await this.stopSpeaking();
+        await new Promise((r) => setTimeout(r, 320));
+      }
+    } catch {}
+
     const t0 = Date.now();
     const activeLang = opts.lang || (await voicePackManager.getActiveLanguageId());
     const langKey = activeLang.toLowerCase();
@@ -206,6 +284,236 @@ class UnifiedVoiceService {
   getOfflineEmitter(): NativeEventEmitter | null {
     if (Platform.OS !== 'android' || !OfflineSpeechNative) return null;
     return new NativeEventEmitter(NativeModules.NinjaOfflineSpeechModule);
+  }
+
+  async startWakeWordListening(onDetected: (keyword: string) => void): Promise<() => void> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.startWakeWordListening) {
+      return () => {};
+    }
+    const kwsDir = await voicePackManager.getWakeWordDir();
+    if (!kwsDir) {
+      return () => {};
+    }
+    const vadPath = await voicePackManager.getSharedVadPath();
+    const emitter = new NativeEventEmitter(NativeModules.NinjaOfflineSpeechModule);
+    const sub = emitter.addListener(
+      'NinjaWakeWordDetected',
+      (evt: { value?: string }) => {
+        onDetected(evt?.value || 'HI NEURO NINJA');
+      }
+    );
+
+    try {
+      await OfflineSpeechNative.startWakeWordListening(kwsDir, vadPath);
+    } catch (e) {
+      console.warn('[VoiceService] Wake-word start skipped:', e);
+    }
+
+    return () => {
+      sub.remove();
+      void this.stopWakeWordListening();
+    };
+  }
+
+  async stopWakeWordListening(): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.stopWakeWordListening) {
+      try {
+        await OfflineSpeechNative.stopWakeWordListening();
+      } catch {}
+    }
+  }
+
+  async warmUp(langId?: string): Promise<void> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.warmUpModels) return;
+    const lang = (langId || (await voicePackManager.getActiveLanguageId())).toLowerCase();
+    const ttsDir =
+      (await voicePackManager.getInstalledDir(`tts-${lang}`)) ||
+      (await voicePackManager.getInstalledDir('tts-en-in'));
+    const sttDir =
+      (await voicePackManager.getInstalledDir(`stt-${lang}`)) ||
+      (await voicePackManager.getInstalledDir('stt-base-multilingual'));
+    try {
+      await OfflineSpeechNative.warmUpModels(ttsDir, sttDir);
+    } catch {}
+  }
+
+  async requestAudioFocus(): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.requestAssistantAudioFocus) {
+      try {
+        await OfflineSpeechNative.requestAssistantAudioFocus();
+      } catch {}
+    }
+  }
+
+  async abandonAudioFocus(): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.abandonAssistantAudioFocus) {
+      try {
+        await OfflineSpeechNative.abandonAssistantAudioFocus();
+      } catch {}
+    }
+  }
+
+  async startBargeInMonitor(onBargeIn: () => void): Promise<() => void> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.startBargeInMonitor) {
+      return () => {};
+    }
+    const vadPath = await voicePackManager.getSharedVadPath();
+    const emitter = new NativeEventEmitter(NativeModules.NinjaOfflineSpeechModule);
+    const sub = emitter.addListener('NinjaBargeInDetected', () => {
+      onBargeIn();
+    });
+    try {
+      await OfflineSpeechNative.startBargeInMonitor(vadPath);
+    } catch {}
+    return () => {
+      sub.remove();
+      void this.stopBargeInMonitor();
+    };
+  }
+
+  async stopBargeInMonitor(): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.stopBargeInMonitor) {
+      try {
+        await OfflineSpeechNative.stopBargeInMonitor();
+      } catch {}
+    }
+  }
+
+  async isHeadsetConnected(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.isHeadsetConnected) return false;
+    try {
+      return await OfflineSpeechNative.isHeadsetConnected();
+    } catch {
+      return false;
+    }
+  }
+
+  async setCommunicationAudioMode(enabled: boolean): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.setCommunicationAudioMode) {
+      try {
+        await OfflineSpeechNative.setCommunicationAudioMode(enabled);
+      } catch {}
+    }
+  }
+
+  async setBackgroundWakeWordService(enabled: boolean): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.setBackgroundWakeWordService) {
+      try {
+        await OfflineSpeechNative.setBackgroundWakeWordService(enabled);
+      } catch {}
+    }
+  }
+
+  async openBatteryOptimizationSettings(): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.openBatteryOptimizationSettings) {
+      try {
+        await OfflineSpeechNative.openBatteryOptimizationSettings();
+      } catch {}
+    }
+  }
+
+  async setWakeWordSensitivity(threshold: number): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.setWakeWordSensitivity) {
+      try {
+        await OfflineSpeechNative.setWakeWordSensitivity(threshold);
+      } catch {}
+    }
+  }
+
+  async setWakeWordMode(mode: 'auto' | 'builtin' | 'custom' | 'both'): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.setWakeWordMode) {
+      try {
+        await OfflineSpeechNative.setWakeWordMode(mode);
+      } catch {}
+    }
+  }
+
+  async recordCustomWakeSample(
+    owwDir: string,
+    durationMs = 1900
+  ): Promise<{ embeddingJson: string; rmsPct: number }> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.recordCustomWakeSample) {
+      throw new Error('Custom mic wake-word training is supported on Android native builds.');
+    }
+    return OfflineSpeechNative.recordCustomWakeSample(owwDir, durationMs);
+  }
+
+  async recordRoomNoiseCalibration(
+    owwDir: string,
+    durationMs = 2000
+  ): Promise<{ negSamplesJson: string; bgMeanJson: string; rmsPct: number }> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.recordRoomNoiseCalibration) {
+      throw new Error('Room noise calibration is supported on Android native builds.');
+    }
+    return OfflineSpeechNative.recordRoomNoiseCalibration(owwDir, durationMs);
+  }
+
+  async saveCustomWakeProfile(
+    owwDir: string,
+    phrase: string,
+    samples: number[][],
+    options?: {
+      negSamplesJson?: string | null;
+      bgMeanJson?: string | null;
+      append?: boolean;
+    }
+  ): Promise<number> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.saveCustomWakeProfile) {
+      return 0;
+    }
+    return OfflineSpeechNative.saveCustomWakeProfile(
+      owwDir,
+      phrase,
+      JSON.stringify(samples),
+      options?.negSamplesJson ?? null,
+      options?.bgMeanJson ?? null,
+      Boolean(options?.append)
+    );
+  }
+
+  async getCustomWakeProfile(
+    owwDir: string
+  ): Promise<{
+    phrase: string;
+    sampleCount: number;
+    maxSamples?: number;
+    hasNoiseCalibration?: boolean;
+  } | null> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.getCustomWakeProfile) {
+      return null;
+    }
+    try {
+      return await OfflineSpeechNative.getCustomWakeProfile(owwDir);
+    } catch {
+      return null;
+    }
+  }
+
+  async clearCustomWakeProfile(owwDir: string): Promise<boolean> {
+    if (Platform.OS !== 'android' || !OfflineSpeechNative?.clearCustomWakeProfile) {
+      return false;
+    }
+    try {
+      return await OfflineSpeechNative.clearCustomWakeProfile(owwDir);
+    } catch {
+      return false;
+    }
+  }
+
+  async playWakeChime(): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.playWakeChime) {
+      try {
+        await OfflineSpeechNative.playWakeChime();
+      } catch {}
+    }
+  }
+
+  async setIgnoreDeviceMediaAudio(enabled: boolean): Promise<void> {
+    if (Platform.OS === 'android' && OfflineSpeechNative?.setIgnoreDeviceMediaAudio) {
+      try {
+        await OfflineSpeechNative.setIgnoreDeviceMediaAudio(enabled);
+      } catch {}
+    }
   }
 }
 

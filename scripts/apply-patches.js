@@ -25,3 +25,17 @@ if (fs.existsSync(patchesDir) && fs.existsSync(targetDir)) {
     console.log(`[apply-patches] Synced ${file} to expo-app-blocker`);
   }
 }
+
+// Ensure llama.rn enables buildConfig for AGP 9+
+const llamaBuildGradle = path.join(__dirname, '..', 'node_modules', 'llama.rn', 'android', 'build.gradle');
+if (fs.existsSync(llamaBuildGradle)) {
+  const raw = fs.readFileSync(llamaBuildGradle, 'utf8');
+  if (!raw.includes('buildFeatures') && raw.includes('android {')) {
+    fs.writeFileSync(
+      llamaBuildGradle,
+      raw.replace('android {\n', 'android {\n  buildFeatures {\n    buildConfig true\n  }\n'),
+      'utf8'
+    );
+    console.log('[apply-patches] Enabled buildFeatures.buildConfig in llama.rn');
+  }
+}

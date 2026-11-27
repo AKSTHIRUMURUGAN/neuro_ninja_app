@@ -11,6 +11,7 @@ import { syncAllActiveReminders } from '../services/reminders/reminder-service';
 import { NinjaProvider } from '../context/ninja-context';
 import { NinjaAlertProvider } from '../context/ninja-alert-context';
 import { blockerEngine } from '../services/blocker/blocker-engine';
+import { NinjaAssistantOverlay } from '../components/voice/NinjaAssistantOverlay';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -106,6 +107,7 @@ function RootNavigator() {
           }}
         />
       </Stack>
+      <NinjaAssistantOverlay />
     </ThemeProvider>
   );
 }
